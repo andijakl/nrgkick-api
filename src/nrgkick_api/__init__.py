@@ -9,11 +9,7 @@ from .const import (
     RETRY_BACKOFF_BASE,
     RETRY_STATUSES,
 )
-from .exceptions import (
-    NRGkickAuthenticationError,
-    NRGkickConnectionError,
-    NRGkickError,
-)
+from .exceptions import NRGkickAuthenticationError, NRGkickConnectionError, NRGkickError
 
 __all__ = [
     "NRGkickAPI",

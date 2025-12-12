@@ -21,11 +21,7 @@ from .const import (
     RETRY_BACKOFF_BASE,
     RETRY_STATUSES,
 )
-from .exceptions import (
-    NRGkickAuthenticationError,
-    NRGkickConnectionError,
-    NRGkickError,
-)
+from .exceptions import NRGkickAuthenticationError, NRGkickConnectionError, NRGkickError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -175,7 +171,7 @@ class NRGkickAPI:
             f"Connection to {url} failed after {MAX_RETRIES} attempts: {exc}"
         ) from exc
 
-    async def _make_request_attempt(
+    async def _make_request_attempt(  # pylint: disable=too-many-arguments
         self,
         *,
         session: aiohttp.ClientSession,

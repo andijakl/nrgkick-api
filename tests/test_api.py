@@ -8,11 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock
 import aiohttp
 import pytest
 
-from nrgkick_api import (
-    NRGkickAPI,
-    NRGkickAuthenticationError,
-    NRGkickConnectionError,
-)
+from nrgkick_api import NRGkickAPI, NRGkickAuthenticationError, NRGkickConnectionError
 
 
 @pytest.fixture

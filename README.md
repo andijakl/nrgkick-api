@@ -39,16 +39,16 @@ async def main():
             password="secret",  # Optional
             session=session,
         )
-        
+
         # Get device information
         info = await api.get_info()
         print(f"Device: {info['general']['device_name']}")
         print(f"Serial: {info['general']['serial_number']}")
-        
+
         # Get current values
         values = await api.get_values()
         print(f"Power: {values['powerflow']['total_active_power']}W")
-        
+
         # Control charging
         await api.set_current(16.0)  # Set to 16A
         await api.set_charge_pause(True)  # Pause charging
