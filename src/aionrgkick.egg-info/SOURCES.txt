@@ -1,0 +1,14 @@
+LICENSE
+README.md
+pyproject.toml
+src/aionrgkick/__init__.py
+src/aionrgkick/api.py
+src/aionrgkick/const.py
+src/aionrgkick/exceptions.py
+src/aionrgkick/py.typed
+src/aionrgkick.egg-info/PKG-INFO
+src/aionrgkick.egg-info/SOURCES.txt
+src/aionrgkick.egg-info/dependency_links.txt
+src/aionrgkick.egg-info/requires.txt
+src/aionrgkick.egg-info/top_level.txt
+tests/test_api.py
