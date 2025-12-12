@@ -1,0 +1,53 @@
+name: Feature Request (Library)
+description: Suggest a new feature for the nrgkick-api Python library
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Before submitting
+
+        **Are you requesting a feature for the Home Assistant integration?**
+
+        If yes, please submit your request in the [Home Assistant Core repository](https://github.com/home-assistant/core/issues/new?template=feature_request.yml) instead.
+
+        This issue tracker is only for feature requests for the **nrgkick-api Python library itself**.
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: This is a feature request for the Python library, NOT the Home Assistant integration (otherwise, request [here](https://github.com/home-assistant/core/issues/new?template=feature_request.yml))
+          required: true
+        - label: I have searched existing issues and this is not a duplicate
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Description
+      description: Is your feature request related to a problem? Please describe.
+      placeholder: I'm always frustrated when...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe the solution you'd like
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Describe any alternative solutions or features you've considered
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Add any other context, code examples, or references about the feature request here

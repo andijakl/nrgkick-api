@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Home Assistant Core Issue
+    url: https://github.com/home-assistant/core/issues/new?template=bug_report.yml
+    about: If you have an issue with the NRGkick integration in Home Assistant, please report it in the Home Assistant Core repository.
+  - name: Home Assistant Core Feature Request
+    url: https://github.com/home-assistant/core/issues/new?template=feature_request.yml
+    about: If you want to request a new feature for the NRGkick integration in Home Assistant, please submit it in the Home Assistant Core repository.
+  - name: Home Assistant Community Forum
+    url: https://community.home-assistant.io/
+    about: For general questions and discussions about Home Assistant and the NRGkick integration.

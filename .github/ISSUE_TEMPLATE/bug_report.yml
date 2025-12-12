@@ -1,0 +1,83 @@
+name: Bug Report (Library)
+description: Report a bug specifically in the nrgkick-api Python library (not the Home Assistant integration)
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Before submitting
+
+        **Are you using this library through Home Assistant?**
+
+        If yes, please report the issue in the [Home Assistant Core repository](https://github.com/home-assistant/core/issues/new?template=bug_report.yml) instead.
+
+        This issue tracker is only for bugs in the **nrgkick-api Python library itself** when used independently of Home Assistant.
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I am NOT using this through Home Assistant (otherwise, report [here](https://github.com/home-assistant/core/issues/new?template=bug_report.yml))
+          required: true
+        - label: I have searched existing issues and this is not a duplicate
+          required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Library Version
+      description: What version of nrgkick-api are you using?
+      placeholder: "1.0.0"
+    validations:
+      required: true
+
+  - type: input
+    id: python-version
+    attributes:
+      label: Python Version
+      description: What Python version are you using?
+      placeholder: "3.11.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Steps to reproduce the behavior
+      placeholder: |
+        1. Create API instance with '...'
+        2. Call method '...'
+        3. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error Logs / Traceback
+      description: If applicable, paste any error messages or traceback
+      render: python
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Add any other context about the problem here (NRGkick firmware version, network setup, etc.)
