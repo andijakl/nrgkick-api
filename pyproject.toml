@@ -7,7 +7,7 @@ name = "nrgkick-api"
 version = "1.1.0"
 description = "Async Python client for NRGkick Gen2 EV charger local REST API"
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
 requires-python = ">=3.11"
 authors = [
     {name = "Andreas Jakl", email = "andreas.jakl@live.com"}
@@ -16,7 +16,6 @@ keywords = ["nrgkick", "ev", "charger", "home-assistant", "async", "api"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
