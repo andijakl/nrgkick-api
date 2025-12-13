@@ -65,17 +65,17 @@ NEW_VERSION="${1:-$CURRENT_VERSION}"
 if [[ "$NEW_VERSION" != "$CURRENT_VERSION" ]]; then
     echo ""
     echo -e "${YELLOW}Step 1: Updating version to ${NEW_VERSION}...${NC}"
-    
+
     # Validate version format (basic semver check)
     if ! [[ "$NEW_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
         echo -e "${RED}✗ Invalid version format: $NEW_VERSION${NC}"
         echo "  Please use semantic versioning (e.g., 1.0.1, 1.1.0, 2.0.0)"
         exit 1
     fi
-    
+
     # Update version in pyproject.toml
     sed -i "s/^version = \".*\"/version = \"$NEW_VERSION\"/" pyproject.toml
-    
+
     echo -e "${GREEN}✓ Version updated to ${NEW_VERSION}${NC}"
     VERSION_CHANGED=true
 else

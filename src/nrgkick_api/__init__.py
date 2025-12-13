@@ -12,16 +12,16 @@ from .const import (
 from .exceptions import NRGkickAuthenticationError, NRGkickConnectionError, NRGkickError
 
 __all__ = [
-    "NRGkickAPI",
-    "NRGkickError",
-    "NRGkickConnectionError",
-    "NRGkickAuthenticationError",
-    "ENDPOINT_INFO",
     "ENDPOINT_CONTROL",
+    "ENDPOINT_INFO",
     "ENDPOINT_VALUES",
     "MAX_RETRIES",
     "RETRY_BACKOFF_BASE",
     "RETRY_STATUSES",
+    "NRGkickAPI",
+    "NRGkickAuthenticationError",
+    "NRGkickConnectionError",
+    "NRGkickError",
 ]
 
 __version__ = "1.0.0"

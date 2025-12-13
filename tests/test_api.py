@@ -357,7 +357,7 @@ class TestAPIRetryLogic:
             attempt_count += 1
 
             if attempt_count <= 2:
-                raise asyncio.TimeoutError
+                raise TimeoutError
 
             response = AsyncMock()
             response.status = 200

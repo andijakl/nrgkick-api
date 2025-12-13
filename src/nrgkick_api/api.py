@@ -17,6 +17,7 @@ from .const import (
     ENDPOINT_CONTROL,
     ENDPOINT_INFO,
     ENDPOINT_VALUES,
+    HTTP_ERROR_STATUS,
     MAX_RETRIES,
     RETRY_BACKOFF_BASE,
     RETRY_STATUSES,
@@ -224,9 +225,8 @@ class NRGkickAPI:
                     return {}
 
                 # Check HTTP status after reading JSON
-                if response.status >= 400:
-                    if "Response" not in data:
-                        response.raise_for_status()
+                if response.status >= HTTP_ERROR_STATUS and "Response" not in data:
+                    response.raise_for_status()
 
                 return data if data is not None else {}
 
@@ -269,7 +269,7 @@ class NRGkickAPI:
             # Don't retry 4xx client errors
             self._handle_http_error(exc, url)
 
-        elif isinstance(exc, (aiohttp.ClientConnectorError, aiohttp.ClientOSError)):
+        elif isinstance(exc, aiohttp.ClientConnectorError | aiohttp.ClientOSError):
             if attempt < MAX_RETRIES - 1:
                 wait_time = RETRY_BACKOFF_BASE**attempt
                 _LOGGER.warning(
@@ -352,8 +352,7 @@ class NRGkickAPI:
                 # Success - log if this was a retry
                 if attempt > 0:
                     _LOGGER.info(
-                        "Successfully connected to NRGkick "
-                        "after %d retry attempt(s)",
+                        "Successfully connected to NRGkick after %d retry attempt(s)",
                         attempt,
                     )
                 return result

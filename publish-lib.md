@@ -284,11 +284,9 @@ pre-commit run --all-files
 ```
 
 The `.pre-commit-config.yaml` includes:
-- **black** - Code formatting
-- **isort** - Import sorting
-- **flake8** - Style checking (configured to match black's 88-char line length)
+- **ruff** - Linting (replaces flake8, isort, pylint, and more)
+- **ruff-format** - Code formatting (replaces black)
 - **mypy** - Type checking
-- **pylint** - Code analysis
 
 ### 5.4 Test Build Process
 
