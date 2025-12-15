@@ -90,6 +90,30 @@ class TestAPIGetMethods:
         params = call_args[1]["params"]
         assert params == {"general": "1", "network": "1"}
 
+    async def test_get_info_with_raw_mode(self, mock_session):
+        """Test get_info with raw mode enabled."""
+        api = NRGkickAPI(host="192.168.1.100", session=mock_session)
+        mock_session.get.return_value.__aenter__.return_value.json.return_value = {
+            "connector": {"type": 1}  # Raw numeric value instead of "CEE"
+        }
+
+        result = await api.get_info(raw=True)
+
+        assert result == {"connector": {"type": 1}}
+        call_args = mock_session.get.call_args
+        params = call_args[1]["params"]
+        assert params == {"raw": "1"}
+
+    async def test_get_info_with_sections_and_raw(self, mock_session):
+        """Test get_info with both sections and raw mode."""
+        api = NRGkickAPI(host="192.168.1.100", session=mock_session)
+
+        await api.get_info(["connector", "grid"], raw=True)
+
+        call_args = mock_session.get.call_args
+        params = call_args[1]["params"]
+        assert params == {"raw": "1", "connector": "1", "grid": "1"}
+
     async def test_get_control(self, mock_session):
         """Test get_control API call."""
         api = NRGkickAPI(host="192.168.1.100", session=mock_session)
@@ -125,6 +149,30 @@ class TestAPIGetMethods:
         call_args = mock_session.get.call_args
         params = call_args[1]["params"]
         assert params == {"powerflow": "1", "energy": "1"}
+
+    async def test_get_values_with_raw_mode(self, mock_session):
+        """Test get_values with raw mode enabled."""
+        api = NRGkickAPI(host="192.168.1.100", session=mock_session)
+        mock_session.get.return_value.__aenter__.return_value.json.return_value = {
+            "status": {"charging_state": 2}  # Raw numeric value
+        }
+
+        result = await api.get_values(raw=True)
+
+        assert result == {"status": {"charging_state": 2}}
+        call_args = mock_session.get.call_args
+        params = call_args[1]["params"]
+        assert params == {"raw": "1"}
+
+    async def test_get_values_with_sections_and_raw(self, mock_session):
+        """Test get_values with both sections and raw mode."""
+        api = NRGkickAPI(host="192.168.1.100", session=mock_session)
+
+        await api.get_values(["status", "powerflow"], raw=True)
+
+        call_args = mock_session.get.call_args
+        params = call_args[1]["params"]
+        assert params == {"raw": "1", "status": "1", "powerflow": "1"}
 
 
 class TestAPISetMethods:

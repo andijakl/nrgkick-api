@@ -82,14 +82,34 @@ NRGkickAPI(
 
 | Method | Description |
 |--------|-------------|
-| `get_info(sections=None)` | Get device information |
+| `get_info(sections=None, *, raw=False)` | Get device information |
 | `get_control()` | Get current control parameters |
-| `get_values(sections=None)` | Get real-time telemetry data |
+| `get_values(sections=None, *, raw=False)` | Get real-time telemetry data |
 | `set_current(current)` | Set charging current (6.0-32.0A) |
 | `set_charge_pause(pause)` | Pause/resume charging |
 | `set_energy_limit(limit)` | Set energy limit in Wh (0=unlimited) |
 | `set_phase_count(phases)` | Set phase count (1-3) |
 | `test_connection()` | Test device connectivity |
+
+#### Raw Mode
+
+The `get_info()` and `get_values()` methods support a `raw` parameter. When `raw=True`, the API returns raw numeric values instead of human-readable strings for certain fields:
+
+```python
+# Normal mode (default) - returns strings
+info = await api.get_info()
+print(info["connector"]["type"])  # "CEE"
+print(info["grid"]["phases"])     # "L1, L2, L3"
+
+# Raw mode - returns numeric values
+info = await api.get_info(raw=True)
+print(info["connector"]["type"])  # 1
+print(info["grid"]["phases"])     # 7
+
+# Can be combined with sections
+info = await api.get_info(["connector", "grid"], raw=True)
+values = await api.get_values(["status"], raw=True)
+```
 
 ### Exceptions
 

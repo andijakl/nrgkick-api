@@ -1,0 +1,21 @@
+# Include important files
+include LICENSE
+include README.md
+include CHANGELOG.md
+include pyproject.toml
+
+# Include source code
+recursive-include src/nrgkick_api *.py py.typed
+
+# Include tests
+recursive-include tests *.py
+
+# Exclude documentation (not needed in distribution)
+prune Documentation
+
+# Exclude development files
+exclude .pre-commit-config.yaml
+exclude ruff.toml
+exclude validate.sh
+exclude create_release.sh
+prune .github

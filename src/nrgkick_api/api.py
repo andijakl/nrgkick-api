@@ -376,13 +376,20 @@ class NRGkickAPI:
             ) from last_exception
         return {}
 
-    async def get_info(self, sections: list[str] | None = None) -> dict[str, Any]:
+    async def get_info(
+        self,
+        sections: list[str] | None = None,
+        *,
+        raw: bool = False,
+    ) -> dict[str, Any]:
         """Get device information.
 
         Args:
             sections: Optional list of sections to retrieve.
                      Available: "general", "connector", "grid", "network", "versions"
                      If None, all sections are returned.
+            raw: If True, return raw numeric values instead of human-readable strings.
+                 For example, connector type returns 1 instead of "CEE".
 
         Returns:
             Device information dictionary with requested sections.
@@ -393,8 +400,13 @@ class NRGkickAPI:
 
             # Get specific sections
             info = await api.get_info(["general", "network"])
+
+            # Get raw values
+            info = await api.get_info(raw=True)
         """
         params: dict[str, Any] = {}
+        if raw:
+            params["raw"] = "1"
         if sections:
             for section in sections:
                 params[section] = "1"
@@ -412,13 +424,20 @@ class NRGkickAPI:
         """
         return await self._request(ENDPOINT_CONTROL)
 
-    async def get_values(self, sections: list[str] | None = None) -> dict[str, Any]:
+    async def get_values(
+        self,
+        sections: list[str] | None = None,
+        *,
+        raw: bool = False,
+    ) -> dict[str, Any]:
         """Get current telemetry values.
 
         Args:
             sections: Optional list of sections to retrieve.
                      Available: "energy", "powerflow", "status", "temperatures"
                      If None, all sections are returned.
+            raw: If True, return raw numeric values instead of human-readable strings.
+                 For example, charging state returns numeric code instead of string.
 
         Returns:
             Current values dictionary with telemetry data.
@@ -429,8 +448,13 @@ class NRGkickAPI:
 
             # Get specific sections
             values = await api.get_values(["powerflow", "energy"])
+
+            # Get raw values
+            values = await api.get_values(raw=True)
         """
         params: dict[str, Any] = {}
+        if raw:
+            params["raw"] = "1"
         if sections:
             for section in sections:
                 params[section] = "1"
