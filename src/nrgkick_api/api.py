@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, cast
+from typing import Any
 
 import aiohttp
 from aiohttp import ClientError
@@ -326,7 +326,6 @@ class NRGkickAPI:
         if self._session is None:
             raise RuntimeError("Session not initialized")
 
-        session = cast(aiohttp.ClientSession, self._session)
         url = f"{self._base_url}{endpoint}"
         auth = None
         if self.username and self.password:
@@ -339,7 +338,7 @@ class NRGkickAPI:
         for attempt in range(MAX_RETRIES):
             try:
                 result = await self._make_request_attempt(
-                    session=session,
+                    session=self._session,
                     url=url,
                     auth=auth,
                     params=request_params,
