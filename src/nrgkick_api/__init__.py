@@ -1,5 +1,7 @@
 """Async Python client for NRGkick Gen2 EV charger local REST API."""
 
+from importlib.metadata import PackageNotFoundError, version
+
 from .api import NRGkickAPI
 from .const import (
     ENDPOINT_CONTROL,
@@ -24,4 +26,8 @@ __all__ = [
     "NRGkickError",
 ]
 
-__version__ = "1.0.0"
+try:
+    __version__ = version("nrgkick-api")
+except PackageNotFoundError:  # pragma: no cover
+    # Package is not installed (e.g., running from a source checkout)
+    __version__ = "0.0.0"

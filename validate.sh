@@ -62,6 +62,8 @@ if [[ -z "$VIRTUAL_ENV" ]]; then
     else
         echo -e "  ${RED}✗ No virtual environment found!${NC}"
         echo "  Please create one first: python -m venv venv"
+        echo "  Then activate it: source venv/bin/activate (Linux/Mac) or venv\Scripts\activate (Windows)"
+        echo "  Next, install requirements with: pip install -e .[dev]"
         exit 1
     fi
 else
