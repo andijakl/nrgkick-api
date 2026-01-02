@@ -16,6 +16,7 @@ This library provides an async Python interface for communicating with NRGkick G
 - **Automatic retry logic** - Handles transient network errors with exponential backoff
 - **Authentication support** - Optional HTTP Basic Auth
 - **Type hints** - Full type annotation for better IDE support
+- **Enums for numeric codes** - `IntEnum` types for status, connector type, errors, etc.
 - **Minimal dependencies** - Only requires aiohttp
 
 ## Installation
@@ -106,6 +107,26 @@ info = await api.get_info(raw=True)
 print(info["connector"]["type"])  # 1
 print(info["grid"]["phases"])     # 7
 
+# Convert raw numeric values to enums (enums are exported from the package)
+from nrgkick_api import ChargingStatus, ConnectorType, GridPhases
+
+info = await api.get_info(["connector", "grid"], raw=True)
+connector_type = ConnectorType(info["connector"]["type"])
+grid_phases = GridPhases(info["grid"]["phases"])
+print(connector_type)  # ConnectorType.CEE
+print(grid_phases)     # GridPhases.L1_L2_L3
+
+values = await api.get_values(["status"], raw=True)
+charging_status = ChargingStatus(values["status"]["charging_state"])
+if charging_status is ChargingStatus.CHARGING:
+    print("Charging")
+
+# If you want to be defensive about new/unknown codes, catch ValueError
+try:
+    charging_status = ChargingStatus(values["status"]["charging_state"])
+except ValueError:
+    charging_status = ChargingStatus.UNKNOWN
+
 # Can be combined with sections
 info = await api.get_info(["connector", "grid"], raw=True)
 values = await api.get_values(["status"], raw=True)
@@ -130,7 +151,7 @@ The library communicates with three main endpoints:
 ## Requirements
 
 - Python 3.11+
-- aiohttp 3.8.0+
+- aiohttp 3.13.2+
 - NRGkick Gen2 with JSON API enabled
 
 ## Enabling the JSON API

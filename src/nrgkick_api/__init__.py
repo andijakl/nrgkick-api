@@ -11,6 +11,16 @@ from .const import (
     RETRY_BACKOFF_BASE,
     RETRY_STATUSES,
 )
+from .enums import (
+    CellularMode,
+    ChargingStatus,
+    ConnectorType,
+    ErrorCode,
+    GridPhases,
+    RcdTriggerStatus,
+    RelayState,
+    WarningCode,
+)
 from .exceptions import NRGkickAuthenticationError, NRGkickConnectionError, NRGkickError
 
 __all__ = [
@@ -20,10 +30,18 @@ __all__ = [
     "MAX_RETRIES",
     "RETRY_BACKOFF_BASE",
     "RETRY_STATUSES",
+    "CellularMode",
+    "ChargingStatus",
+    "ConnectorType",
+    "ErrorCode",
+    "GridPhases",
     "NRGkickAPI",
     "NRGkickAuthenticationError",
     "NRGkickConnectionError",
     "NRGkickError",
+    "RcdTriggerStatus",
+    "RelayState",
+    "WarningCode",
 ]
 
 try:
