@@ -81,16 +81,16 @@ NRGkickAPI(
 
 #### Methods
 
-| Method | Description |
-|--------|-------------|
-| `get_info(sections=None, *, raw=False)` | Get device information |
-| `get_control()` | Get current control parameters |
-| `get_values(sections=None, *, raw=False)` | Get real-time telemetry data |
-| `set_current(current)` | Set charging current (6.0-32.0A) |
-| `set_charge_pause(pause)` | Pause/resume charging |
-| `set_energy_limit(limit)` | Set energy limit in Wh (0=unlimited) |
-| `set_phase_count(phases)` | Set phase count (1-3) |
-| `test_connection()` | Test device connectivity |
+| Method                                    | Description                          |
+| ----------------------------------------- | ------------------------------------ |
+| `get_info(sections=None, *, raw=False)`   | Get device information               |
+| `get_control()`                           | Get current control parameters       |
+| `get_values(sections=None, *, raw=False)` | Get real-time telemetry data         |
+| `set_current(current)`                    | Set charging current (6.0-32.0A)     |
+| `set_charge_pause(pause)`                 | Pause/resume charging                |
+| `set_energy_limit(limit)`                 | Set energy limit in Wh (0=unlimited) |
+| `set_phase_count(phases)`                 | Set phase count (1-3)                |
+| `test_connection()`                       | Test device connectivity             |
 
 #### Raw Mode
 
@@ -134,11 +134,12 @@ values = await api.get_values(["status"], raw=True)
 
 ### Exceptions
 
-| Exception | Description |
-|-----------|-------------|
-| `NRGkickError` | Base exception for all NRGkick errors |
-| `NRGkickConnectionError` | Network/communication errors |
-| `NRGkickAuthenticationError` | Authentication failures (401/403) |
+| Exception                    | Description                           |
+| ---------------------------- | ------------------------------------- |
+| `NRGkickError`               | Base exception for all NRGkick errors |
+| `NRGkickConnectionError`     | Network/communication errors          |
+| `NRGkickAuthenticationError` | Authentication failures (401/403)     |
+| `NRGkickAPIDisabledError`    | Device JSON API is disabled           |
 
 ## API Endpoints
 
@@ -163,6 +164,9 @@ The local REST API must be enabled in the NRGkick mobile app:
 3. Navigate to Settings → JSON API
 4. Enable the API
 5. Optionally configure authentication
+
+If the JSON API is disabled, the device may respond with `{"Response":"API must be enabled within the NRGkick App"}`.
+In that case, this library raises `NRGkickAPIDisabledError`.
 
 ## License
 

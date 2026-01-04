@@ -31,3 +31,11 @@ class NRGkickAuthenticationError(NRGkickError):
     - HTTP 403 Forbidden is returned
     - Invalid credentials are provided
     """
+
+
+class NRGkickAPIDisabledError(NRGkickError):
+    """Exception raised when the device JSON API is disabled.
+
+    The device can respond with a JSON payload indicating that the local JSON
+    API must be enabled in the NRGkick app.
+    """

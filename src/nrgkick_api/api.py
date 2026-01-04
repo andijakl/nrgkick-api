@@ -22,7 +22,12 @@ from .const import (
     RETRY_BACKOFF_BASE,
     RETRY_STATUSES,
 )
-from .exceptions import NRGkickAuthenticationError, NRGkickConnectionError, NRGkickError
+from .exceptions import (
+    NRGkickAPIDisabledError,
+    NRGkickAuthenticationError,
+    NRGkickConnectionError,
+    NRGkickError,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -223,6 +228,14 @@ class NRGkickAPI:
                 except Exception:  # pylint: disable=broad-exception-caught
                     response.raise_for_status()
                     return {}
+
+                # The device uses this JSON message when the local JSON API is disabled.
+                if (
+                    isinstance(data, dict)
+                    and data.get("Response")
+                    == "API must be enabled within the NRGkick App"
+                ):
+                    raise NRGkickAPIDisabledError(data["Response"])
 
                 # Check HTTP status after reading JSON
                 if response.status >= HTTP_ERROR_STATUS and "Response" not in data:

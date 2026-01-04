@@ -8,7 +8,12 @@ from unittest.mock import AsyncMock, MagicMock, Mock
 import aiohttp
 import pytest
 
-from nrgkick_api import NRGkickAPI, NRGkickAuthenticationError, NRGkickConnectionError
+from nrgkick_api import (
+    NRGkickAPI,
+    NRGkickAPIDisabledError,
+    NRGkickAuthenticationError,
+    NRGkickConnectionError,
+)
 
 
 @pytest.fixture
@@ -366,6 +371,19 @@ class TestAPIHTTPErrors:
         with pytest.raises(NRGkickConnectionError):
             await api.get_control()
 
+    async def test_api_disabled_raises(self, mock_session):
+        """Device returns a JSON message when the local JSON API is disabled."""
+        api = NRGkickAPI("192.168.1.100", session=mock_session)
+
+        response_mock = mock_session.get.return_value.__aenter__.return_value
+        response_mock.status = 200
+        response_mock.json = AsyncMock(
+            return_value={"Response": "API must be enabled within the NRGkick App"}
+        )
+
+        with pytest.raises(NRGkickAPIDisabledError):
+            await api.get_info()
+
     async def test_api_no_retry_on_client_error_4xx(self, mock_session):
         """Test API does NOT retry on 4xx client errors (except 401/403)."""
         api = NRGkickAPI("192.168.1.100", session=mock_session)
@@ -503,6 +521,7 @@ class TestExceptions:
 
         assert issubclass(NRGkickConnectionError, NRGkickError)
         assert issubclass(NRGkickAuthenticationError, NRGkickError)
+        assert issubclass(NRGkickAPIDisabledError, NRGkickError)
 
     def test_catch_base_exception(self):
         """Test catching all NRGkick exceptions with base class."""
@@ -515,5 +534,10 @@ class TestExceptions:
 
         try:
             raise NRGkickAuthenticationError("test")
+        except NRGkickError:
+            pass  # Should catch
+
+        try:
+            raise NRGkickAPIDisabledError("test")
         except NRGkickError:
             pass  # Should catch

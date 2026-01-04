@@ -21,7 +21,12 @@ from .enums import (
     RelayState,
     WarningCode,
 )
-from .exceptions import NRGkickAuthenticationError, NRGkickConnectionError, NRGkickError
+from .exceptions import (
+    NRGkickAPIDisabledError,
+    NRGkickAuthenticationError,
+    NRGkickConnectionError,
+    NRGkickError,
+)
 
 __all__ = [
     "ENDPOINT_CONTROL",
@@ -36,6 +41,7 @@ __all__ = [
     "ErrorCode",
     "GridPhases",
     "NRGkickAPI",
+    "NRGkickAPIDisabledError",
     "NRGkickAuthenticationError",
     "NRGkickConnectionError",
     "NRGkickError",
