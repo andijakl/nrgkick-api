@@ -371,6 +371,29 @@ class TestAPIHTTPErrors:
         with pytest.raises(NRGkickConnectionError):
             await api.get_control()
 
+    async def test_api_invalid_json_with_success_status_raises(self, mock_session):
+        """Test API raises when HTTP is 200 but payload is not valid JSON."""
+        api = NRGkickAPI("192.168.1.100", session=mock_session)
+
+        response_mock = mock_session.get.return_value.__aenter__.return_value
+        response_mock.status = 200
+        response_mock.json = AsyncMock(side_effect=Exception("Invalid JSON"))
+        response_mock.raise_for_status = Mock()  # 200 OK => no exception
+
+        with pytest.raises(NRGkickConnectionError, match="Invalid JSON response"):
+            await api.get_info()
+
+    async def test_api_non_dict_json_response_raises(self, mock_session):
+        """Test API raises when JSON payload is not an object/dict."""
+        api = NRGkickAPI("192.168.1.100", session=mock_session)
+
+        response_mock = mock_session.get.return_value.__aenter__.return_value
+        response_mock.status = 200
+        response_mock.json = AsyncMock(return_value=[{"a": 1}])
+
+        with pytest.raises(NRGkickConnectionError, match="Unexpected response type"):
+            await api.get_values()
+
     async def test_api_disabled_raises(self, mock_session):
         """Device returns a JSON message when the local JSON API is disabled."""
         api = NRGkickAPI("192.168.1.100", session=mock_session)

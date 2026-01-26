@@ -225,9 +225,28 @@ class NRGkickAPI:
                 # Read JSON response (even on errors)
                 try:
                     data = await response.json()
-                except Exception:  # pylint: disable=broad-exception-caught
+                except Exception as exc:  # pylint: disable=broad-exception-caught
+                    # If the server indicated an error status, keep the existing
+                    # behavior of surfacing it via raise_for_status().
                     response.raise_for_status()
-                    return {}
+                    # For successful status codes, a non-JSON payload is an
+                    # unexpected protocol/communication error.
+                    raise NRGkickConnectionError(
+                        f"Invalid JSON response from {url} (HTTP {response.status})."
+                    ) from exc
+
+                if data is None:
+                    raise NRGkickConnectionError(
+                        f"No data returned from {url} (HTTP {response.status})."
+                    )
+
+                # All known endpoints return a JSON object. If we get a list,
+                # string, etc., surface it as a protocol error to consumers.
+                if not isinstance(data, dict):
+                    raise NRGkickConnectionError(
+                        f"Unexpected response type {type(data).__name__} from {url} "
+                        f"(HTTP {response.status})."
+                    )
 
                 # The device uses this JSON message when the local JSON API is disabled.
                 if (
@@ -241,7 +260,7 @@ class NRGkickAPI:
                 if response.status >= HTTP_ERROR_STATUS and "Response" not in data:
                     response.raise_for_status()
 
-                return data if data is not None else {}
+                return data
 
     async def _handle_retry_exception(
         self,
