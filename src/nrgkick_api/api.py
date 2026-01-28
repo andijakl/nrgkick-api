@@ -25,8 +25,10 @@ from .const import (
 from .exceptions import (
     NRGkickAPIDisabledError,
     NRGkickAuthenticationError,
+    NRGkickCommandRejectedError,
     NRGkickConnectionError,
     NRGkickError,
+    NRGkickInvalidResponseError,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -491,66 +493,173 @@ class NRGkickAPI:
                 params[section] = "1"
         return await self._request(ENDPOINT_VALUES, params)
 
-    async def set_current(self, current: float) -> dict[str, Any]:
+    @staticmethod
+    def _parse_command_response(
+        raw: Any,
+        *,
+        expected_key: str,
+        expected_value: int | float | str | None = None,
+    ) -> Any:
+        """Parse and normalize a device command response.
+
+        Args:
+            raw: Parsed JSON response from the device.
+            expected_key: Key expected to be present on success.
+            expected_value: Optional value to validate against; also used to infer
+                the expected type for normalization.
+
+        Returns:
+            The normalized value for expected_key.
+
+        Raises:
+            NRGkickCommandRejectedError: If device payload indicates rejection.
+            NRGkickInvalidResponseError: If payload type/shape/value is unexpected.
+        """
+        if not isinstance(raw, dict):
+            raise NRGkickInvalidResponseError(
+                f"expected JSON object, got {type(raw).__name__}", raw=raw
+            )
+
+        response_reason = raw.get("Response")
+        if isinstance(response_reason, str) and response_reason.strip():
+            raise NRGkickCommandRejectedError(
+                response_reason,
+                raw=raw,
+            )
+
+        if expected_key not in raw:
+            keys = ", ".join(sorted(str(k) for k in raw))
+            raise NRGkickInvalidResponseError(
+                f"missing expected key '{expected_key}' (keys: {keys})",
+                raw=raw,
+            )
+
+        value = raw[expected_key]
+
+        # Normalize value type based on expected_value, if provided.
+        normalized: Any = value
+        if isinstance(expected_value, int) and not isinstance(expected_value, bool):
+            try:
+                if isinstance(value, bool):
+                    raise ValueError("bool is not a valid int payload")
+                normalized = int(value)
+            except Exception as exc:  # pylint: disable=broad-exception-caught
+                raise NRGkickInvalidResponseError(
+                    f"key '{expected_key}' expected int, got {value!r} ({type(value).__name__})",
+                    raw=raw,
+                ) from exc
+        elif isinstance(expected_value, float):
+            try:
+                if isinstance(value, bool):
+                    raise ValueError("bool is not a valid float payload")
+                normalized = float(value)
+            except Exception as exc:  # pylint: disable=broad-exception-caught
+                raise NRGkickInvalidResponseError(
+                    f"key '{expected_key}' expected float, got {value!r} ({type(value).__name__})",
+                    raw=raw,
+                ) from exc
+        elif isinstance(expected_value, str):
+            if not isinstance(value, str):
+                raise NRGkickInvalidResponseError(
+                    f"key '{expected_key}' expected str, got {value!r} ({type(value).__name__})",
+                    raw=raw,
+                )
+            normalized = value
+
+        if expected_value is not None and normalized != expected_value:
+            raise NRGkickInvalidResponseError(
+                f"key '{expected_key}' expected {expected_value!r}, got {normalized!r}",
+                raw=raw,
+            )
+
+        return normalized
+
+    async def set_current(self, current: float) -> float:
         """Set charging current.
 
         Args:
             current: Desired charging current in amps (6.0-32.0).
 
         Returns:
-            Response from the device confirming the new setting.
+            The updated current setpoint as float.
 
         Raises:
-            NRGkickConnectionError: If the command fails.
+            NRGkickCommandRejectedError: If the device rejects the command.
+            NRGkickInvalidResponseError: If response payload is unexpected.
+            NRGkickConnectionError: If the request fails.
         """
-        return await self._request(ENDPOINT_CONTROL, {"current_set": current})
+        raw = await self._request(ENDPOINT_CONTROL, {"current_set": current})
+        return float(
+            self._parse_command_response(
+                raw, expected_key="current_set", expected_value=float(current)
+            )
+        )
 
-    async def set_charge_pause(self, pause: bool) -> dict[str, Any]:
+    async def set_charge_pause(self, pause: bool) -> int:
         """Set charge pause state.
 
         Args:
             pause: True to pause charging, False to resume.
 
         Returns:
-            Response from the device confirming the new state.
+            The updated pause state as int (0 or 1).
 
         Raises:
-            NRGkickConnectionError: If the command fails.
+            NRGkickCommandRejectedError: If the device rejects the command.
+            NRGkickInvalidResponseError: If response payload is unexpected.
+            NRGkickConnectionError: If the request fails.
         """
-        return await self._request(
+        expected = 1 if pause else 0
+        raw = await self._request(
             ENDPOINT_CONTROL, {"charge_pause": "1" if pause else "0"}
         )
+        return int(
+            self._parse_command_response(
+                raw, expected_key="charge_pause", expected_value=expected
+            )
+        )
 
-    async def set_energy_limit(self, limit: int) -> dict[str, Any]:
+    async def set_energy_limit(self, limit: int) -> int:
         """Set energy limit for the charging session.
 
         Args:
             limit: Energy limit in Wh. Use 0 for unlimited.
 
         Returns:
-            Response from the device confirming the new limit.
+            The updated energy limit as int (Wh).
 
         Raises:
-            NRGkickConnectionError: If the command fails.
+            NRGkickCommandRejectedError: If the device rejects the command.
+            NRGkickInvalidResponseError: If response payload is unexpected.
+            NRGkickConnectionError: If the request fails.
         """
-        return await self._request(ENDPOINT_CONTROL, {"energy_limit": limit})
+        raw = await self._request(ENDPOINT_CONTROL, {"energy_limit": limit})
+        return int(
+            self._parse_command_response(
+                raw, expected_key="energy_limit", expected_value=int(limit)
+            )
+        )
 
-    async def set_phase_count(self, phases: int) -> dict[str, Any]:
+    async def set_phase_count(self, phases: int) -> int:
         """Set the number of phases for charging.
 
         Args:
             phases: Number of phases (1, 2, or 3).
 
         Returns:
-            Response from the device confirming the new setting.
+            The updated phase count as int.
 
         Raises:
-            ValueError: If phases is not 1, 2, or 3.
-            NRGkickConnectionError: If the command fails.
+            NRGkickCommandRejectedError: If the device rejects the command.
+            NRGkickInvalidResponseError: If response payload is unexpected.
+            NRGkickConnectionError: If the request fails.
         """
-        if phases not in [1, 2, 3]:
-            raise ValueError("Phase count must be 1, 2, or 3")
-        return await self._request(ENDPOINT_CONTROL, {"phase_count": phases})
+        raw = await self._request(ENDPOINT_CONTROL, {"phase_count": phases})
+        return int(
+            self._parse_command_response(
+                raw, expected_key="phase_count", expected_value=int(phases)
+            )
+        )
 
     async def test_connection(self) -> bool:
         """Test if we can connect to the device.

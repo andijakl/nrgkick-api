@@ -134,12 +134,23 @@ values = await api.get_values(["status"], raw=True)
 
 ### Exceptions
 
-| Exception                    | Description                           |
-| ---------------------------- | ------------------------------------- |
-| `NRGkickError`               | Base exception for all NRGkick errors |
-| `NRGkickConnectionError`     | Network/communication errors          |
-| `NRGkickAuthenticationError` | Authentication failures (401/403)     |
-| `NRGkickAPIDisabledError`    | Device JSON API is disabled           |
+| Exception                     | Description                                                    |
+| ----------------------------- | -------------------------------------------------------------- |
+| `NRGkickError`                | Base exception for all NRGkick errors                          |
+| `NRGkickConnectionError`      | Network/communication errors                                   |
+| `NRGkickAuthenticationError`  | Authentication failures (401/403)                              |
+| `NRGkickAPIDisabledError`     | Device JSON API is disabled                                    |
+| `NRGkickCommandRejectedError` | Device explicitly rejected a command (reason is user-facing)   |
+| `NRGkickInvalidResponseError` | Unexpected/malformed payload (missing keys, wrong types, etc.) |
+
+#### Command rejections vs invalid responses
+
+- `NRGkickCommandRejectedError`: The device accepted the HTTP request but refused to apply the command. The `reason` string is safe to display to users.
+- `NRGkickInvalidResponseError`: The device (or protocol) returned an unexpected payload shape/type (e.g., missing expected key, wrong type that cannot be coerced).
+
+Note: The device may also return HTTP errors like `406 Not Acceptable` for invalid command inputs, but still include a JSON payload with a `Response` string. This library treats that as a device command rejection and raises `NRGkickCommandRejectedError`.
+
+Authentication/connection-related exceptions remain unchanged.
 
 ## API Endpoints
 

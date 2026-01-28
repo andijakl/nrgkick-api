@@ -24,8 +24,10 @@ from .enums import (
 from .exceptions import (
     NRGkickAPIDisabledError,
     NRGkickAuthenticationError,
+    NRGkickCommandRejectedError,
     NRGkickConnectionError,
     NRGkickError,
+    NRGkickInvalidResponseError,
 )
 
 __all__ = [
@@ -43,8 +45,10 @@ __all__ = [
     "NRGkickAPI",
     "NRGkickAPIDisabledError",
     "NRGkickAuthenticationError",
+    "NRGkickCommandRejectedError",
     "NRGkickConnectionError",
     "NRGkickError",
+    "NRGkickInvalidResponseError",
     "RcdTriggerStatus",
     "RelayState",
     "WarningCode",
