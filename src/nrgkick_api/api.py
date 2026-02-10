@@ -14,11 +14,19 @@ import aiohttp
 from aiohttp import ClientError
 
 from .const import (
+    CONTROL_KEY_CHARGE_PAUSE,
+    CONTROL_KEY_CURRENT_SET,
+    CONTROL_KEY_ENERGY_LIMIT,
+    CONTROL_KEY_PHASE_COUNT,
     ENDPOINT_CONTROL,
     ENDPOINT_INFO,
     ENDPOINT_VALUES,
     HTTP_ERROR_STATUS,
+    JSON_KEY_RESPONSE,
     MAX_RETRIES,
+    QUERY_PARAM_RAW,
+    QUERY_VALUE_FALSE,
+    QUERY_VALUE_TRUE,
     RETRY_BACKOFF_BASE,
     RETRY_STATUSES,
 )
@@ -32,6 +40,9 @@ from .exceptions import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+
+_CURRENT_SET_TOLERANCE = 0.1
 
 
 class NRGkickAPI:
@@ -212,7 +223,7 @@ class NRGkickAPI:
                 # Retry on transient HTTP errors
                 if response.status in RETRY_STATUSES and attempt < MAX_RETRIES - 1:
                     wait_time = RETRY_BACKOFF_BASE**attempt
-                    _LOGGER.warning(
+                    _LOGGER.debug(
                         "Transient HTTP error %d from %s, "
                         "retrying in %.1f seconds (attempt %d/%d)",
                         response.status,
@@ -253,13 +264,16 @@ class NRGkickAPI:
                 # The device uses this JSON message when the local JSON API is disabled.
                 if (
                     isinstance(data, dict)
-                    and data.get("Response")
+                    and data.get(JSON_KEY_RESPONSE)
                     == "API must be enabled within the NRGkick App"
                 ):
-                    raise NRGkickAPIDisabledError(data["Response"])
+                    raise NRGkickAPIDisabledError(data[JSON_KEY_RESPONSE])
 
                 # Check HTTP status after reading JSON
-                if response.status >= HTTP_ERROR_STATUS and "Response" not in data:
+                if (
+                    response.status >= HTTP_ERROR_STATUS
+                    and JSON_KEY_RESPONSE not in data
+                ):
                     response.raise_for_status()
 
                 return data
@@ -287,7 +301,7 @@ class NRGkickAPI:
         if isinstance(exc, asyncio.TimeoutError):
             if attempt < MAX_RETRIES - 1:
                 wait_time = RETRY_BACKOFF_BASE**attempt
-                _LOGGER.warning(
+                _LOGGER.debug(
                     "Connection timeout to %s, retrying in %.1f "
                     "seconds (attempt %d/%d)",
                     url,
@@ -306,7 +320,7 @@ class NRGkickAPI:
         elif isinstance(exc, aiohttp.ClientConnectorError | aiohttp.ClientOSError):
             if attempt < MAX_RETRIES - 1:
                 wait_time = RETRY_BACKOFF_BASE**attempt
-                _LOGGER.warning(
+                _LOGGER.debug(
                     "Network error connecting to %s: %s. "
                     "Retrying in %.1f seconds (attempt %d/%d)",
                     url,
@@ -323,7 +337,7 @@ class NRGkickAPI:
             # Generic aiohttp errors - retry with backoff
             if attempt < MAX_RETRIES - 1:
                 wait_time = RETRY_BACKOFF_BASE**attempt
-                _LOGGER.warning(
+                _LOGGER.debug(
                     "Client error connecting to %s: %s. "
                     "Retrying in %.1f seconds (attempt %d/%d)",
                     url,
@@ -439,10 +453,10 @@ class NRGkickAPI:
         """
         params: dict[str, Any] = {}
         if raw:
-            params["raw"] = "1"
+            params[QUERY_PARAM_RAW] = QUERY_VALUE_TRUE
         if sections:
             for section in sections:
-                params[section] = "1"
+                params[section] = QUERY_VALUE_TRUE
         return await self._request(ENDPOINT_INFO, params)
 
     async def get_control(self) -> dict[str, Any]:
@@ -487,11 +501,50 @@ class NRGkickAPI:
         """
         params: dict[str, Any] = {}
         if raw:
-            params["raw"] = "1"
+            params[QUERY_PARAM_RAW] = QUERY_VALUE_TRUE
         if sections:
             for section in sections:
-                params[section] = "1"
+                params[section] = QUERY_VALUE_TRUE
         return await self._request(ENDPOINT_VALUES, params)
+
+    @staticmethod
+    def _validate_expected_value(
+        *,
+        expected_key: str,
+        normalized: Any,
+        expected_value: int | float | str | None,
+        tolerance: float | None,
+        raw: dict[str, Any],
+    ) -> Any:
+        """Validate a normalized value against an expected value.
+
+        Note: `_parse_command_response` already normalizes `normalized` based on
+        `expected_value`'s type. This helper focuses on value comparison.
+        """
+        if expected_value is None:
+            return normalized
+
+        if tolerance is not None and isinstance(expected_value, float):
+            if not isinstance(normalized, float):
+                raise NRGkickInvalidResponseError(
+                    f"key '{expected_key}' expected float, got {normalized!r} ({type(normalized).__name__})",
+                    raw=raw,
+                )
+
+            if abs(normalized - expected_value) > tolerance:
+                raise NRGkickInvalidResponseError(
+                    f"key '{expected_key}' expected {expected_value!r}±{tolerance!r}, got {normalized!r}",
+                    raw=raw,
+                )
+            return normalized
+
+        if normalized != expected_value:
+            raise NRGkickInvalidResponseError(
+                f"key '{expected_key}' expected {expected_value!r}, got {normalized!r}",
+                raw=raw,
+            )
+
+        return normalized
 
     @staticmethod
     def _parse_command_response(
@@ -499,6 +552,7 @@ class NRGkickAPI:
         *,
         expected_key: str,
         expected_value: int | float | str | None = None,
+        tolerance: float | None = None,
     ) -> Any:
         """Parse and normalize a device command response.
 
@@ -520,7 +574,7 @@ class NRGkickAPI:
                 f"expected JSON object, got {type(raw).__name__}", raw=raw
             )
 
-        response_reason = raw.get("Response")
+        response_reason = raw.get(JSON_KEY_RESPONSE)
         if isinstance(response_reason, str) and response_reason.strip():
             raise NRGkickCommandRejectedError(
                 response_reason,
@@ -566,13 +620,13 @@ class NRGkickAPI:
                 )
             normalized = value
 
-        if expected_value is not None and normalized != expected_value:
-            raise NRGkickInvalidResponseError(
-                f"key '{expected_key}' expected {expected_value!r}, got {normalized!r}",
-                raw=raw,
-            )
-
-        return normalized
+        return NRGkickAPI._validate_expected_value(
+            expected_key=expected_key,
+            normalized=normalized,
+            expected_value=expected_value,
+            tolerance=tolerance,
+            raw=raw,
+        )
 
     async def set_current(self, current: float) -> float:
         """Set charging current.
@@ -581,19 +635,21 @@ class NRGkickAPI:
             current: Desired charging current in amps (6.0-32.0).
 
         Returns:
-            The updated current setpoint as float.
+            The updated current setpoint as float, as reported by the device.
 
         Raises:
             NRGkickCommandRejectedError: If the device rejects the command.
             NRGkickInvalidResponseError: If response payload is unexpected.
             NRGkickConnectionError: If the request fails.
         """
-        raw = await self._request(ENDPOINT_CONTROL, {"current_set": current})
-        return float(
-            self._parse_command_response(
-                raw, expected_key="current_set", expected_value=float(current)
-            )
+        raw = await self._request(ENDPOINT_CONTROL, {CONTROL_KEY_CURRENT_SET: current})
+        actual = self._parse_command_response(
+            raw,
+            expected_key=CONTROL_KEY_CURRENT_SET,
+            expected_value=float(current),
+            tolerance=_CURRENT_SET_TOLERANCE,
         )
+        return float(actual)
 
     async def set_charge_pause(self, pause: bool) -> int:
         """Set charge pause state.
@@ -611,11 +667,18 @@ class NRGkickAPI:
         """
         expected = 1 if pause else 0
         raw = await self._request(
-            ENDPOINT_CONTROL, {"charge_pause": "1" if pause else "0"}
+            ENDPOINT_CONTROL,
+            {
+                CONTROL_KEY_CHARGE_PAUSE: QUERY_VALUE_TRUE
+                if pause
+                else QUERY_VALUE_FALSE
+            },
         )
         return int(
             self._parse_command_response(
-                raw, expected_key="charge_pause", expected_value=expected
+                raw,
+                expected_key=CONTROL_KEY_CHARGE_PAUSE,
+                expected_value=expected,
             )
         )
 
@@ -633,10 +696,12 @@ class NRGkickAPI:
             NRGkickInvalidResponseError: If response payload is unexpected.
             NRGkickConnectionError: If the request fails.
         """
-        raw = await self._request(ENDPOINT_CONTROL, {"energy_limit": limit})
+        raw = await self._request(ENDPOINT_CONTROL, {CONTROL_KEY_ENERGY_LIMIT: limit})
         return int(
             self._parse_command_response(
-                raw, expected_key="energy_limit", expected_value=int(limit)
+                raw,
+                expected_key=CONTROL_KEY_ENERGY_LIMIT,
+                expected_value=int(limit),
             )
         )
 
@@ -654,10 +719,12 @@ class NRGkickAPI:
             NRGkickInvalidResponseError: If response payload is unexpected.
             NRGkickConnectionError: If the request fails.
         """
-        raw = await self._request(ENDPOINT_CONTROL, {"phase_count": phases})
+        raw = await self._request(ENDPOINT_CONTROL, {CONTROL_KEY_PHASE_COUNT: phases})
         return int(
             self._parse_command_response(
-                raw, expected_key="phase_count", expected_value=int(phases)
+                raw,
+                expected_key=CONTROL_KEY_PHASE_COUNT,
+                expected_value=int(phases),
             )
         )
 

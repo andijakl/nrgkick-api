@@ -9,6 +9,14 @@ import aiohttp
 import pytest
 
 from nrgkick_api import (
+    CONTROL_KEY_CHARGE_PAUSE,
+    CONTROL_KEY_CURRENT_SET,
+    CONTROL_KEY_ENERGY_LIMIT,
+    CONTROL_KEY_PHASE_COUNT,
+    JSON_KEY_RESPONSE,
+    QUERY_PARAM_RAW,
+    QUERY_VALUE_FALSE,
+    QUERY_VALUE_TRUE,
     NRGkickAPI,
     NRGkickAPIDisabledError,
     NRGkickAuthenticationError,
@@ -95,7 +103,7 @@ class TestAPIGetMethods:
 
         call_args = mock_session.get.call_args
         params = call_args[1]["params"]
-        assert params == {"general": "1", "network": "1"}
+        assert params == {"general": QUERY_VALUE_TRUE, "network": QUERY_VALUE_TRUE}
 
     async def test_get_info_with_raw_mode(self, mock_session):
         """Test get_info with raw mode enabled."""
@@ -109,7 +117,7 @@ class TestAPIGetMethods:
         assert result == {"connector": {"type": 1}}
         call_args = mock_session.get.call_args
         params = call_args[1]["params"]
-        assert params == {"raw": "1"}
+        assert params == {QUERY_PARAM_RAW: QUERY_VALUE_TRUE}
 
     async def test_get_info_with_sections_and_raw(self, mock_session):
         """Test get_info with both sections and raw mode."""
@@ -119,7 +127,11 @@ class TestAPIGetMethods:
 
         call_args = mock_session.get.call_args
         params = call_args[1]["params"]
-        assert params == {"raw": "1", "connector": "1", "grid": "1"}
+        assert params == {
+            QUERY_PARAM_RAW: QUERY_VALUE_TRUE,
+            "connector": QUERY_VALUE_TRUE,
+            "grid": QUERY_VALUE_TRUE,
+        }
 
     async def test_get_control(self, mock_session):
         """Test get_control API call."""
@@ -155,7 +167,7 @@ class TestAPIGetMethods:
 
         call_args = mock_session.get.call_args
         params = call_args[1]["params"]
-        assert params == {"powerflow": "1", "energy": "1"}
+        assert params == {"powerflow": QUERY_VALUE_TRUE, "energy": QUERY_VALUE_TRUE}
 
     async def test_get_values_with_raw_mode(self, mock_session):
         """Test get_values with raw mode enabled."""
@@ -169,7 +181,7 @@ class TestAPIGetMethods:
         assert result == {"status": {"charging_state": 2}}
         call_args = mock_session.get.call_args
         params = call_args[1]["params"]
-        assert params == {"raw": "1"}
+        assert params == {QUERY_PARAM_RAW: QUERY_VALUE_TRUE}
 
     async def test_get_values_with_sections_and_raw(self, mock_session):
         """Test get_values with both sections and raw mode."""
@@ -179,7 +191,11 @@ class TestAPIGetMethods:
 
         call_args = mock_session.get.call_args
         params = call_args[1]["params"]
-        assert params == {"raw": "1", "status": "1", "powerflow": "1"}
+        assert params == {
+            QUERY_PARAM_RAW: QUERY_VALUE_TRUE,
+            "status": QUERY_VALUE_TRUE,
+            "powerflow": QUERY_VALUE_TRUE,
+        }
 
 
 class TestAPISetMethods:
@@ -189,7 +205,7 @@ class TestAPISetMethods:
         """Test set_current API call."""
         api = NRGkickAPI(host="192.168.1.100", session=mock_session)
         mock_session.get.return_value.__aenter__.return_value.json.return_value = {
-            "current_set": 16.0
+            CONTROL_KEY_CURRENT_SET: 16.0
         }
 
         result = await api.set_current(16.0)
@@ -197,46 +213,56 @@ class TestAPISetMethods:
 
         call_args = mock_session.get.call_args
         assert call_args[0][0] == "http://192.168.1.100/control"
-        assert call_args[1]["params"] == {"current_set": 16.0}
+        assert call_args[1]["params"] == {CONTROL_KEY_CURRENT_SET: 16.0}
+
+    async def test_set_current_returns_actual_with_tolerance(self, mock_session):
+        """set_current should accept rounding and return the device value."""
+        api = NRGkickAPI(host="192.168.1.100", session=mock_session)
+        mock_session.get.return_value.__aenter__.return_value.json.return_value = {
+            CONTROL_KEY_CURRENT_SET: 15.95
+        }
+
+        result = await api.set_current(16.0)
+        assert result == 15.95
 
     async def test_set_charge_pause_true(self, mock_session):
         """Test set_charge_pause with pause=True."""
         api = NRGkickAPI(host="192.168.1.100", session=mock_session)
         mock_session.get.return_value.__aenter__.return_value.json.return_value = {
-            "charge_pause": 1
+            CONTROL_KEY_CHARGE_PAUSE: 1
         }
 
         result = await api.set_charge_pause(True)
         assert result == 1
 
         call_args = mock_session.get.call_args
-        assert call_args[1]["params"] == {"charge_pause": "1"}
+        assert call_args[1]["params"] == {CONTROL_KEY_CHARGE_PAUSE: QUERY_VALUE_TRUE}
 
     async def test_set_charge_pause_false(self, mock_session):
         """Test set_charge_pause with pause=False."""
         api = NRGkickAPI(host="192.168.1.100", session=mock_session)
         mock_session.get.return_value.__aenter__.return_value.json.return_value = {
-            "charge_pause": "0"
+            CONTROL_KEY_CHARGE_PAUSE: QUERY_VALUE_FALSE
         }
 
         result = await api.set_charge_pause(False)
         assert result == 0
 
         call_args = mock_session.get.call_args
-        assert call_args[1]["params"] == {"charge_pause": "0"}
+        assert call_args[1]["params"] == {CONTROL_KEY_CHARGE_PAUSE: QUERY_VALUE_FALSE}
 
     async def test_set_energy_limit(self, mock_session):
         """Test set_energy_limit API call."""
         api = NRGkickAPI(host="192.168.1.100", session=mock_session)
         mock_session.get.return_value.__aenter__.return_value.json.return_value = {
-            "energy_limit": 5000
+            CONTROL_KEY_ENERGY_LIMIT: 5000
         }
 
         result = await api.set_energy_limit(5000)
         assert result == 5000
 
         call_args = mock_session.get.call_args
-        assert call_args[1]["params"] == {"energy_limit": 5000}
+        assert call_args[1]["params"] == {CONTROL_KEY_ENERGY_LIMIT: 5000}
 
     async def test_set_phase_count_valid(self, mock_session):
         """Test set_phase_count with valid values."""
@@ -244,11 +270,11 @@ class TestAPISetMethods:
 
         for phases in [1, 2, 3]:
             mock_session.get.return_value.__aenter__.return_value.json.return_value = {
-                "phase_count": phases
+                CONTROL_KEY_PHASE_COUNT: phases
             }
             await api.set_phase_count(phases)
             call_args = mock_session.get.call_args
-            assert call_args[1]["params"] == {"phase_count": phases}
+            assert call_args[1]["params"] == {CONTROL_KEY_PHASE_COUNT: phases}
 
     async def test_set_charge_pause_rejected_raises(self, mock_session):
         """Device rejection payload should raise typed exception."""
@@ -257,7 +283,9 @@ class TestAPISetMethods:
         response_mock = mock_session.get.return_value.__aenter__.return_value
         response_mock.status = 200
         response_mock.json = AsyncMock(
-            return_value={"Response": "Charging pause is blocked by solar-charging"}
+            return_value={
+                JSON_KEY_RESPONSE: "Charging pause is blocked by solar-charging"
+            }
         )
 
         with pytest.raises(NRGkickCommandRejectedError) as exc_info:
@@ -271,7 +299,8 @@ class TestAPISetMethods:
         mock_session.get.return_value.__aenter__.return_value.json.return_value = {}
 
         with pytest.raises(
-            NRGkickInvalidResponseError, match="missing expected key 'charge_pause'"
+            NRGkickInvalidResponseError,
+            match=f"missing expected key '{CONTROL_KEY_CHARGE_PAUSE}'",
         ):
             await api.set_charge_pause(True)
 
@@ -279,7 +308,7 @@ class TestAPISetMethods:
         """Non-coercible type should raise invalid response."""
         api = NRGkickAPI("192.168.1.100", session=mock_session)
         mock_session.get.return_value.__aenter__.return_value.json.return_value = {
-            "charge_pause": "nope"
+            CONTROL_KEY_CHARGE_PAUSE: "nope"
         }
 
         with pytest.raises(NRGkickInvalidResponseError, match="expected int"):
@@ -293,7 +322,7 @@ class TestAPISetMethods:
         response = AsyncMock()
         response.status = 406
         response.json = AsyncMock(
-            return_value={"Response": "Invalid phases entered, allowed 1 - 3"}
+            return_value={JSON_KEY_RESPONSE: "Invalid phases entered, allowed 1 - 3"}
         )
         response.raise_for_status = MagicMock()
 
@@ -313,7 +342,9 @@ class TestAPISetMethods:
         response_mock = mock_session.get.return_value.__aenter__.return_value
         response_mock.status = 406
         response_mock.json = AsyncMock(
-            return_value={"Response": "Invalid current entered, allowed 6.0A - 32.0A"}
+            return_value={
+                JSON_KEY_RESPONSE: "Invalid current entered, allowed 6.0A - 32.0A"
+            }
         )
 
         with pytest.raises(NRGkickCommandRejectedError) as exc_info:
@@ -428,7 +459,9 @@ class TestAPIHTTPErrors:
         response_mock = mock_session.get.return_value.__aenter__.return_value
         response_mock.status = 405
         response_mock.json = AsyncMock(
-            return_value={"Response": "Charging pause is blocked by solar-charging"}
+            return_value={
+                JSON_KEY_RESPONSE: "Charging pause is blocked by solar-charging"
+            }
         )
 
         with pytest.raises(NRGkickCommandRejectedError) as exc_info:
@@ -485,7 +518,9 @@ class TestAPIHTTPErrors:
         response_mock = mock_session.get.return_value.__aenter__.return_value
         response_mock.status = 200
         response_mock.json = AsyncMock(
-            return_value={"Response": "API must be enabled within the NRGkick App"}
+            return_value={
+                JSON_KEY_RESPONSE: "API must be enabled within the NRGkick App"
+            }
         )
 
         with pytest.raises(NRGkickAPIDisabledError):
@@ -564,7 +599,9 @@ class TestAPIRetryLogic:
             else:
                 response.status = 200
 
-            response.json = AsyncMock(return_value={"control": {"current_set": 16}})
+            response.json = AsyncMock(
+                return_value={"control": {CONTROL_KEY_CURRENT_SET: 16}}
+            )
 
             mock_ctx = MagicMock()
             mock_ctx.__aenter__ = AsyncMock(return_value=response)
@@ -574,7 +611,7 @@ class TestAPIRetryLogic:
         mock_session.get = MagicMock(side_effect=mock_get_with_503_then_success)
 
         result = await api.get_control()
-        assert result == {"control": {"current_set": 16}}
+        assert result == {"control": {CONTROL_KEY_CURRENT_SET: 16}}
         assert attempt_count == 3
 
     async def test_api_retry_exhausted_on_timeout(self, mock_session):
