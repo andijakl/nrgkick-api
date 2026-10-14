@@ -2,11 +2,13 @@
 # validate.sh - Validate the nrgkick-api library before committing/releasing
 #
 # This script:
-# 1. Ensures the virtual environment is activated
+# 1. Creates/updates the virtual environment (.venv) with uv
 # 2. Updates pre-commit hooks to latest versions
 # 3. Runs all pre-commit hooks
 # 4. Checks if files were modified and need git staging
 # 5. Runs all tests with coverage
+#
+# Requires uv: https://docs.astral.sh/uv/getting-started/installation/
 #
 # Usage: ./validate.sh [--no-update] [--no-tests]
 #   --no-update  Skip updating pre-commit hooks
@@ -46,38 +48,24 @@ echo ""
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# Step 1: Check/activate virtual environment
-echo -e "${YELLOW}Step 1: Checking virtual environment...${NC}"
+# Step 1: Sync virtual environment with uv
+echo -e "${YELLOW}Step 1: Syncing virtual environment with uv...${NC}"
 
-if [[ -z "$VIRTUAL_ENV" ]]; then
-    if [[ -f "venv/bin/activate" ]]; then
-        echo "  Activating virtual environment..."
-        source venv/bin/activate
-        echo -e "  ${GREEN}✓ Virtual environment activated${NC}"
-    elif [[ -f "venv/Scripts/activate" ]]; then
-        # Windows Git Bash
-        echo "  Activating virtual environment (Windows)..."
-        source venv/Scripts/activate
-        echo -e "  ${GREEN}✓ Virtual environment activated${NC}"
-    else
-        echo -e "  ${RED}✗ No virtual environment found!${NC}"
-        echo "  Please create one first: python -m venv venv"
-        echo "  Then activate it: source venv/bin/activate (Linux/Mac) or venv\Scripts\activate (Windows)"
-        echo "  Next, install requirements with: pip install -e .[dev]"
-        exit 1
-    fi
-else
-    echo -e "  ${GREEN}✓ Virtual environment already active: $VIRTUAL_ENV${NC}"
+if ! command -v uv &> /dev/null; then
+    echo -e "  ${RED}✗ uv is not installed!${NC}"
+    echo "  Install it from https://docs.astral.sh/uv/getting-started/installation/"
+    exit 1
 fi
 
-# Step 2: Ensure pre-commit is installed
+# Creates .venv if needed and installs the package plus the dev dependency group
+uv sync
+echo -e "  ${GREEN}✓ Virtual environment (.venv) is up to date${NC}"
+
+# Step 2: Ensure pre-commit is available (part of the dev dependency group)
 echo ""
 echo -e "${YELLOW}Step 2: Checking pre-commit installation...${NC}"
 
-if ! command -v pre-commit &> /dev/null; then
-    echo "  Installing pre-commit..."
-    pip install pre-commit
-fi
+uv run pre-commit --version > /dev/null
 echo -e "  ${GREEN}✓ pre-commit is installed${NC}"
 
 # Step 3: Update pre-commit hooks (optional)
@@ -86,7 +74,7 @@ echo -e "${YELLOW}Step 3: Pre-commit hooks...${NC}"
 
 if [[ "$UPDATE_HOOKS" == true ]]; then
     echo "  Updating hooks to latest versions..."
-    pre-commit autoupdate
+    uv run pre-commit autoupdate
     echo -e "  ${GREEN}✓ Hooks updated${NC}"
 else
     echo -e "  ${BLUE}ℹ Skipping hook updates (--no-update)${NC}"
@@ -101,7 +89,7 @@ MODIFIED_BEFORE=$(git status --porcelain 2>/dev/null || echo "")
 
 # Run pre-commit (don't exit on failure, we want to check for modifications)
 set +e
-pre-commit run --all-files
+uv run pre-commit run --all-files
 PRECOMMIT_EXIT=$?
 set -e
 
@@ -139,7 +127,7 @@ echo ""
 echo -e "${YELLOW}Step 6: Running tests...${NC}"
 
 if [[ "$RUN_TESTS" == true ]]; then
-    pytest tests/ -v --cov=src/nrgkick_api --cov-report=term-missing
+    uv run pytest tests/ -v --cov=src/nrgkick_api --cov-report=term-missing
     echo -e "  ${GREEN}✓ All tests passed${NC}"
 else
     echo -e "  ${BLUE}ℹ Skipping tests (--no-tests)${NC}"

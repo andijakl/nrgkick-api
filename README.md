@@ -8,7 +8,7 @@ Async Python client for NRGkick Gen2 EV charger local REST API.
 
 ## Overview
 
-This library provides an async Python interface for communicating with NRGkick Gen2 EV chargers via their local REST JSON API. It is designed to be used with Home Assistant but can be used standalone in any async Python application.
+This library provides an async Python interface for communicating with NRGkick Gen2 EV chargers via their local REST JSON API. It powers the [NRGkick integration in Home Assistant](https://www.home-assistant.io/integrations/nrgkick) but can be used standalone in any async Python application.
 
 ## Features
 
@@ -32,6 +32,7 @@ import asyncio
 import aiohttp
 from nrgkick_api import NRGkickAPI
 
+
 async def main():
     async with aiohttp.ClientSession() as session:
         api = NRGkickAPI(
@@ -53,6 +54,7 @@ async def main():
         # Control charging
         await api.set_current(16.0)  # Set to 16A
         await api.set_charge_pause(True)  # Pause charging
+
 
 asyncio.run(main())
 ```
@@ -100,12 +102,12 @@ The `get_info()` and `get_values()` methods support a `raw` parameter. When `raw
 # Normal mode (default) - returns strings
 info = await api.get_info()
 print(info["connector"]["type"])  # "CEE"
-print(info["grid"]["phases"])     # "L1, L2, L3"
+print(info["grid"]["phases"])  # "L1, L2, L3"
 
 # Raw mode - returns numeric values
 info = await api.get_info(raw=True)
 print(info["connector"]["type"])  # 1
-print(info["grid"]["phases"])     # 7
+print(info["grid"]["phases"])  # 7
 
 # Convert raw numeric values to enums (enums are exported from the package)
 from nrgkick_api import ChargingStatus, ConnectorType, GridPhases
@@ -114,43 +116,86 @@ info = await api.get_info(["connector", "grid"], raw=True)
 connector_type = ConnectorType(info["connector"]["type"])
 grid_phases = GridPhases(info["grid"]["phases"])
 print(connector_type)  # ConnectorType.CEE
-print(grid_phases)     # GridPhases.L1_L2_L3
+print(grid_phases)  # GridPhases.L1_L2_L3
 
-values = await api.get_values(["status"], raw=True)
-charging_status = ChargingStatus(values["status"]["charging_state"])
+values = await api.get_values(["general"], raw=True)
+charging_status = ChargingStatus(values["general"]["status"])
 if charging_status is ChargingStatus.CHARGING:
     print("Charging")
 
 # If you want to be defensive about new/unknown codes, catch ValueError
 try:
-    charging_status = ChargingStatus(values["status"]["charging_state"])
+    charging_status = ChargingStatus(values["general"]["status"])
 except ValueError:
     charging_status = ChargingStatus.UNKNOWN
 
 # Can be combined with sections
 info = await api.get_info(["connector", "grid"], raw=True)
-values = await api.get_values(["status"], raw=True)
+values = await api.get_values(["general"], raw=True)
 ```
 
 ### Exceptions
 
-| Exception                     | Description                                                    |
-| ----------------------------- | -------------------------------------------------------------- |
-| `NRGkickError`                | Base exception for all NRGkick errors                          |
-| `NRGkickConnectionError`      | Network/communication errors                                   |
-| `NRGkickAuthenticationError`  | Authentication failures (401/403)                              |
-| `NRGkickAPIDisabledError`     | Device JSON API is disabled                                    |
-| `NRGkickCommandRejectedError` | Device explicitly rejected a command (reason is user-facing)   |
-| `NRGkickInvalidResponseError` | Unexpected/malformed payload (missing keys, wrong types, etc.) |
+All exceptions inherit from `NRGkickError`.
+
+```text
+NRGkickError
+├── NRGkickConnectionError
+│   ├── NRGkickTimeoutError
+│   ├── NRGkickUnreachableError
+│   └── NRGkickHTTPError
+├── NRGkickAuthenticationError
+├── NRGkickAPIDisabledError
+├── NRGkickCommandRejectedError
+└── NRGkickInvalidResponseError
+```
+
+| Exception                     | Description                                                                          |
+| ----------------------------- | ------------------------------------------------------------------------------------ |
+| `NRGkickError`                | Base exception for all NRGkick errors                                                |
+| `NRGkickConnectionError`      | Network/communication errors (base class; also raised for e.g. a connection reset)   |
+| `NRGkickTimeoutError`         | The device did not respond in time                                                   |
+| `NRGkickUnreachableError`     | No connection could be established (connection refused, DNS failure, no route)      |
+| `NRGkickHTTPError`            | The device answered with an HTTP error status; the code is in `status: int`          |
+| `NRGkickAuthenticationError`  | Authentication failures (401/403)                                                    |
+| `NRGkickAPIDisabledError`     | Device JSON API is disabled                                                          |
+| `NRGkickCommandRejectedError` | Device explicitly rejected a command (reason is user-facing)                         |
+| `NRGkickInvalidResponseError` | Unexpected/malformed payload (invalid JSON, not an object, missing keys, wrong type) |
+
+Transient errors (timeouts, network errors, HTTP 5xx) are retried up to `MAX_RETRIES` times before an exception is raised.
+
+#### Connection errors
+
+The exception type (plus `status` for `NRGkickHTTPError`) tells you what went wrong, so you can build your own, e.g. translated, message. The exception text is English and intended for logs; it may include the device URL.
+
+```python
+from nrgkick_api import (
+    NRGkickConnectionError,
+    NRGkickHTTPError,
+    NRGkickTimeoutError,
+    NRGkickUnreachableError,
+)
+
+try:
+    values = await api.get_values()
+except NRGkickTimeoutError:
+    ...  # The charger did not respond in time
+except NRGkickUnreachableError:
+    ...  # The charger could not be reached
+except NRGkickHTTPError as err:
+    ...  # The charger answered with HTTP error err.status
+except NRGkickConnectionError:
+    ...  # Any other communication error
+```
+
+Because the specific types are subclasses of `NRGkickConnectionError`, code that only catches `NRGkickConnectionError` keeps working.
 
 #### Command rejections vs invalid responses
 
 - `NRGkickCommandRejectedError`: The device accepted the HTTP request but refused to apply the command. The `reason` string is safe to display to users.
-- `NRGkickInvalidResponseError`: The device (or protocol) returned an unexpected payload shape/type (e.g., missing expected key, wrong type that cannot be coerced).
+- `NRGkickInvalidResponseError`: The device (or protocol) returned an unexpected payload shape/type (e.g., a body that is not valid JSON, missing expected key, wrong type that cannot be coerced).
 
 Note: The device may also return HTTP errors like `406 Not Acceptable` for invalid command inputs, but still include a JSON payload with a `Response` string. This library treats that as a device command rejection and raises `NRGkickCommandRejectedError`.
-
-Authentication/connection-related exceptions remain unchanged.
 
 ## API Endpoints
 
@@ -162,8 +207,8 @@ The library communicates with three main endpoints:
 
 ## Requirements
 
-- Python 3.11+
-- aiohttp 3.13.2+
+- Python 3.14+
+- aiohttp 3.14.5+
 - NRGkick Gen2 with JSON API enabled
 
 ## Enabling the JSON API
@@ -179,6 +224,17 @@ The local REST API must be enabled in the NRGkick mobile app:
 If the JSON API is disabled, the device may respond with `{"Response":"API must be enabled within the NRGkick App"}`.
 In that case, this library raises `NRGkickAPIDisabledError`.
 
+## Development
+
+The project uses [uv](https://docs.astral.sh/uv/). To create the virtual environment (`.venv`) with all development dependencies and run the checks:
+
+```bash
+uv sync
+./validate.sh
+```
+
+Single tools can be run with `uv run`, e.g. `uv run pytest` or `uv run mypy src/nrgkick_api`.
+
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
@@ -189,4 +245,8 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## Related Projects
 
-- [nrgkick-homeassistant](https://github.com/andijakl/nrgkick-homeassistant) - Home Assistant integration using this library
+- [NRGkick integration for Home Assistant](https://www.home-assistant.io/integrations/nrgkick) - Home Assistant core integration using this library ([source](https://github.com/home-assistant/core/tree/dev/homeassistant/components/nrgkick))
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for notable changes.

@@ -11,7 +11,7 @@ import logging
 from typing import Any
 
 import aiohttp
-from aiohttp import ClientError
+from aiohttp import ClientError, hdrs
 
 from .const import (
     CONTROL_KEY_CHARGE_PAUSE,
@@ -36,7 +36,10 @@ from .exceptions import (
     NRGkickCommandRejectedError,
     NRGkickConnectionError,
     NRGkickError,
+    NRGkickHTTPError,
     NRGkickInvalidResponseError,
+    NRGkickTimeoutError,
+    NRGkickUnreachableError,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -114,12 +117,12 @@ class NRGkickAPI:
             url: The URL that timed out.
 
         Raises:
-            NRGkickConnectionError: Always raised with details.
+            NRGkickTimeoutError: Always raised with details.
         """
         _LOGGER.error(
             "Connection timeout after %d attempts. Target: %s", MAX_RETRIES, url
         )
-        raise NRGkickConnectionError(
+        raise NRGkickTimeoutError(
             f"Connection timeout after {MAX_RETRIES} attempts to {url}. "
             "Please check that the device is powered on and reachable."
         ) from exc
@@ -132,7 +135,7 @@ class NRGkickAPI:
             url: The URL that returned the error.
 
         Raises:
-            NRGkickConnectionError: Always raised with details.
+            NRGkickHTTPError: Always raised with details and the status code.
         """
         _LOGGER.error(
             "Device returned HTTP error %d (%s). URL: %s",
@@ -140,9 +143,10 @@ class NRGkickAPI:
             exc.message,
             url,
         )
-        raise NRGkickConnectionError(
+        raise NRGkickHTTPError(
             f"HTTP error {exc.status} ({exc.message}) from {url}. "
-            "The device may be busy or experiencing issues."
+            "The device may be busy or experiencing issues.",
+            status=exc.status,
         ) from exc
 
     def _handle_connection_error(
@@ -157,7 +161,10 @@ class NRGkickAPI:
             url: The URL that failed to connect.
 
         Raises:
-            NRGkickConnectionError: Always raised with details.
+            NRGkickUnreachableError: If no connection could be established
+                (refused, DNS failure, network unreachable).
+            NRGkickConnectionError: If an OS-level error interrupted an
+                established connection (e.g. connection reset).
         """
         _LOGGER.error(
             "Network connection failed after %d attempts: %s. Target: %s",
@@ -165,8 +172,13 @@ class NRGkickAPI:
             exc,
             url,
         )
+        if isinstance(exc, aiohttp.ClientConnectorError):
+            raise NRGkickUnreachableError(
+                f"Failed to connect to {url} after {MAX_RETRIES} attempts: {exc}. "
+                "Please check network connectivity and device availability."
+            ) from exc
         raise NRGkickConnectionError(
-            f"Failed to connect to {url} after {MAX_RETRIES} attempts: {exc}. "
+            f"Connection to {url} failed after {MAX_RETRIES} attempts: {exc}. "
             "Please check network connectivity and device availability."
         ) from exc
 
@@ -195,27 +207,35 @@ class NRGkickAPI:
         *,
         session: aiohttp.ClientSession,
         url: str,
-        auth: aiohttp.BasicAuth | None,
+        headers: dict[str, str],
         params: dict[str, Any],
         attempt: int,
+        command: bool,
     ) -> dict[str, Any] | None:
         """Make a single request attempt, handling transient errors.
 
         Args:
             session: The aiohttp session to use.
             url: The full URL to request.
-            auth: Optional Basic Auth credentials.
+            headers: Request headers (e.g. Basic Auth credentials).
             params: Query parameters for the request.
             attempt: Current attempt number (0-indexed).
+            command: True for control commands. An HTTP error status with a
+                device response message is then returned to the caller, so it
+                can be reported as a command rejection.
 
         Returns:
             Response data if successful, None if should retry.
 
         Raises:
             NRGkickAuthenticationError: If authentication fails.
+            NRGkickAPIDisabledError: If the device JSON API is disabled.
+            NRGkickInvalidResponseError: If the payload is not a JSON object.
+            aiohttp.ClientResponseError: If the device returns an HTTP error
+                status (for commands: without a device response message).
         """
         async with asyncio.timeout(10):
-            async with session.get(url, auth=auth, params=params) as response:
+            async with session.get(url, headers=headers, params=params) as response:
                 # Check authentication (don't retry)
                 if response.status in (401, 403):
                     self._handle_auth_error(response.status, url)
@@ -239,42 +259,50 @@ class NRGkickAPI:
                 try:
                     data = await response.json()
                 except Exception as exc:  # pylint: disable=broad-exception-caught
-                    # If the server indicated an error status, keep the existing
-                    # behavior of surfacing it via raise_for_status().
+                    # If the server indicated an error status, surface it via
+                    # raise_for_status() as an HTTP error.
                     response.raise_for_status()
-                    # For successful status codes, a non-JSON payload is an
-                    # unexpected protocol/communication error.
-                    raise NRGkickConnectionError(
+                    # For successful status codes, a non-JSON payload is a
+                    # protocol error.
+                    raise NRGkickInvalidResponseError(
                         f"Invalid JSON response from {url} (HTTP {response.status})."
                     ) from exc
 
+                has_device_response = (
+                    isinstance(data, dict) and JSON_KEY_RESPONSE in data
+                )
+
+                # The device uses this JSON message when the local JSON API is disabled.
+                if (
+                    has_device_response
+                    and data[JSON_KEY_RESPONSE]
+                    == "API must be enabled within the NRGkick App"
+                ):
+                    raise NRGkickAPIDisabledError(data[JSON_KEY_RESPONSE])
+
+                # Check HTTP status before validating the payload shape, so an
+                # error status is reported as such. For commands, device response
+                # messages (e.g. "406 Invalid current") are passed on to the
+                # caller to be raised as command rejections. For reads, such a
+                # message (e.g. "Error 404 - ...") is an HTTP error.
+                if response.status >= HTTP_ERROR_STATUS and not (
+                    command and has_device_response
+                ):
+                    response.raise_for_status()
+
                 if data is None:
-                    raise NRGkickConnectionError(
+                    raise NRGkickInvalidResponseError(
                         f"No data returned from {url} (HTTP {response.status})."
                     )
 
                 # All known endpoints return a JSON object. If we get a list,
                 # string, etc., surface it as a protocol error to consumers.
                 if not isinstance(data, dict):
-                    raise NRGkickConnectionError(
+                    raise NRGkickInvalidResponseError(
                         f"Unexpected response type {type(data).__name__} from {url} "
-                        f"(HTTP {response.status})."
+                        f"(HTTP {response.status}).",
+                        raw=data,
                     )
-
-                # The device uses this JSON message when the local JSON API is disabled.
-                if (
-                    isinstance(data, dict)
-                    and data.get(JSON_KEY_RESPONSE)
-                    == "API must be enabled within the NRGkick App"
-                ):
-                    raise NRGkickAPIDisabledError(data[JSON_KEY_RESPONSE])
-
-                # Check HTTP status after reading JSON
-                if (
-                    response.status >= HTTP_ERROR_STATUS
-                    and JSON_KEY_RESPONSE not in data
-                ):
-                    response.raise_for_status()
 
                 return data
 
@@ -295,8 +323,10 @@ class NRGkickAPI:
             True if should retry, False if should raise.
 
         Raises:
-            NRGkickConnectionError: If retries exhausted or non-retryable error.
-            NRGkickAuthenticationError: If auth error (via handlers).
+            NRGkickTimeoutError: If the device did not respond in time.
+            NRGkickUnreachableError: If no connection could be established.
+            NRGkickHTTPError: If the device returned an HTTP error status.
+            NRGkickConnectionError: For other communication errors.
         """
         if isinstance(exc, asyncio.TimeoutError):
             if attempt < MAX_RETRIES - 1:
@@ -356,12 +386,16 @@ class NRGkickAPI:
         self,
         endpoint: str,
         params: dict[str, Any] | None = None,
+        *,
+        command: bool = False,
     ) -> dict[str, Any]:
         """Make a request to the API with automatic retry.
 
         Args:
             endpoint: API endpoint path (e.g., "/info").
             params: Optional query parameters.
+            command: True for control commands, whose device response
+                messages are returned even with an HTTP error status.
 
         Returns:
             Parsed JSON response as a dictionary.
@@ -369,15 +403,22 @@ class NRGkickAPI:
         Raises:
             RuntimeError: If session is not initialized.
             NRGkickAuthenticationError: If authentication fails.
-            NRGkickConnectionError: If connection fails after retries.
+            NRGkickAPIDisabledError: If the device JSON API is disabled.
+            NRGkickInvalidResponseError: If the response is not a JSON object.
+            NRGkickConnectionError: If communication fails after retries. One
+                of the subclasses NRGkickTimeoutError, NRGkickUnreachableError
+                or NRGkickHTTPError identifies the cause where possible.
         """
         if self._session is None:
             raise RuntimeError("Session not initialized")
 
         url = f"{self._base_url}{endpoint}"
-        auth = None
+        headers: dict[str, str] = {}
         if self.username and self.password:
-            auth = aiohttp.BasicAuth(self.username, self.password)
+            # latin1 matches the encoding of the former aiohttp.BasicAuth default.
+            headers[hdrs.AUTHORIZATION] = aiohttp.encode_basic_auth(
+                self.username, self.password, encoding="latin1"
+            )
 
         request_params = params if params is not None else {}
 
@@ -388,9 +429,10 @@ class NRGkickAPI:
                 result = await self._make_request_attempt(
                     session=self._session,
                     url=url,
-                    auth=auth,
+                    headers=headers,
                     params=request_params,
                     attempt=attempt,
+                    command=command,
                 )
                 if result is None:
                     # Transient error, retry requested
@@ -415,13 +457,11 @@ class NRGkickAPI:
                 # Exception handler raised its own exception, won't reach here
                 raise
 
-        # Should never reach here, but just in case
-        if last_exception:
-            raise NRGkickConnectionError(
-                f"Failed after {MAX_RETRIES} attempts to {url}. "
-                f"Last error: {last_exception}"
-            ) from last_exception
-        return {}
+        # Should never reach here: every attempt either returns or raises.
+        raise NRGkickConnectionError(
+            f"Failed after {MAX_RETRIES} attempts to {url}. "
+            f"Last error: {last_exception}"
+        ) from last_exception
 
     async def get_info(
         self,
@@ -433,7 +473,8 @@ class NRGkickAPI:
 
         Args:
             sections: Optional list of sections to retrieve.
-                     Available: "general", "connector", "grid", "network", "versions"
+                     Available: "general", "connector", "grid", "network",
+                     "cellular", "gps", "versions"
                      If None, all sections are returned.
             raw: If True, return raw numeric values instead of human-readable strings.
                  For example, connector type returns 1 instead of "CEE".
@@ -481,7 +522,7 @@ class NRGkickAPI:
 
         Args:
             sections: Optional list of sections to retrieve.
-                     Available: "energy", "powerflow", "status", "temperatures"
+                     Available: "general", "energy", "powerflow", "temperatures"
                      If None, all sections are returned.
             raw: If True, return raw numeric values instead of human-readable strings.
                  For example, charging state returns numeric code instead of string.
@@ -642,7 +683,9 @@ class NRGkickAPI:
             NRGkickInvalidResponseError: If response payload is unexpected.
             NRGkickConnectionError: If the request fails.
         """
-        raw = await self._request(ENDPOINT_CONTROL, {CONTROL_KEY_CURRENT_SET: current})
+        raw = await self._request(
+            ENDPOINT_CONTROL, {CONTROL_KEY_CURRENT_SET: current}, command=True
+        )
         actual = self._parse_command_response(
             raw,
             expected_key=CONTROL_KEY_CURRENT_SET,
@@ -673,6 +716,7 @@ class NRGkickAPI:
                 if pause
                 else QUERY_VALUE_FALSE
             },
+            command=True,
         )
         return int(
             self._parse_command_response(
@@ -696,7 +740,9 @@ class NRGkickAPI:
             NRGkickInvalidResponseError: If response payload is unexpected.
             NRGkickConnectionError: If the request fails.
         """
-        raw = await self._request(ENDPOINT_CONTROL, {CONTROL_KEY_ENERGY_LIMIT: limit})
+        raw = await self._request(
+            ENDPOINT_CONTROL, {CONTROL_KEY_ENERGY_LIMIT: limit}, command=True
+        )
         return int(
             self._parse_command_response(
                 raw,
@@ -719,7 +765,9 @@ class NRGkickAPI:
             NRGkickInvalidResponseError: If response payload is unexpected.
             NRGkickConnectionError: If the request fails.
         """
-        raw = await self._request(ENDPOINT_CONTROL, {CONTROL_KEY_PHASE_COUNT: phases})
+        raw = await self._request(
+            ENDPOINT_CONTROL, {CONTROL_KEY_PHASE_COUNT: phases}, command=True
+        )
         return int(
             self._parse_command_response(
                 raw,

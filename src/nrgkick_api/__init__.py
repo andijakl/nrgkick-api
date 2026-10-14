@@ -35,7 +35,10 @@ from .exceptions import (
     NRGkickCommandRejectedError,
     NRGkickConnectionError,
     NRGkickError,
+    NRGkickHTTPError,
     NRGkickInvalidResponseError,
+    NRGkickTimeoutError,
+    NRGkickUnreachableError,
 )
 
 __all__ = [
@@ -64,7 +67,10 @@ __all__ = [
     "NRGkickCommandRejectedError",
     "NRGkickConnectionError",
     "NRGkickError",
+    "NRGkickHTTPError",
     "NRGkickInvalidResponseError",
+    "NRGkickTimeoutError",
+    "NRGkickUnreachableError",
     "RcdTriggerStatus",
     "RelayState",
     "WarningCode",

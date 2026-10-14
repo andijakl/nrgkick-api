@@ -1,9 +1,9 @@
-# Ruff configuration for NRGkick Home Assistant Integration
+# Ruff configuration for the nrgkick-api library
 # Aligned with Home Assistant core configuration
 # https://github.com/home-assistant/core/blob/dev/pyproject.toml
 
-# Target Python 3.13 (Home Assistant 2025.x requirement)
-target-version = "py313"
+# Target Python 3.14 (Home Assistant 2026.x requirement)
+target-version = "py314"
 
 # Line length to match Home Assistant
 line-length = 88

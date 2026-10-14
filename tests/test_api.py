@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, Mock
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import aiohttp
 import pytest
@@ -22,7 +22,10 @@ from nrgkick_api import (
     NRGkickAuthenticationError,
     NRGkickCommandRejectedError,
     NRGkickConnectionError,
+    NRGkickHTTPError,
     NRGkickInvalidResponseError,
+    NRGkickTimeoutError,
+    NRGkickUnreachableError,
 )
 
 
@@ -43,6 +46,43 @@ def mock_session():
     session.get = MagicMock(return_value=mock_get)
 
     return session
+
+
+@pytest.fixture
+def no_retry_delay():
+    """Skip the retry backoff delay so retry tests run instantly."""
+    with patch("nrgkick_api.api.asyncio.sleep", new=AsyncMock()) as sleep_mock:
+        yield sleep_mock
+
+
+def _http_error_response(status: int, json_result: object = None) -> AsyncMock:
+    """Create a response mock that behaves like aiohttp for HTTP error statuses.
+
+    If json_result is an exception, response.json() raises it.
+    """
+    response = AsyncMock()
+    response.status = status
+    if isinstance(json_result, Exception):
+        response.json = AsyncMock(side_effect=json_result)
+    else:
+        response.json = AsyncMock(return_value=json_result)
+    response.raise_for_status = Mock(
+        side_effect=aiohttp.ClientResponseError(
+            request_info=Mock(),
+            history=(),
+            status=status,
+            message="Error",
+        )
+    )
+    return response
+
+
+def _set_response(session: AsyncMock, response: AsyncMock) -> None:
+    """Make every session.get() call return the given response."""
+    mock_ctx = MagicMock()
+    mock_ctx.__aenter__ = AsyncMock(return_value=response)
+    mock_ctx.__aexit__ = AsyncMock(return_value=None)
+    session.get = MagicMock(return_value=mock_ctx)
 
 
 class TestAPIInitialization:
@@ -173,12 +213,12 @@ class TestAPIGetMethods:
         """Test get_values with raw mode enabled."""
         api = NRGkickAPI(host="192.168.1.100", session=mock_session)
         mock_session.get.return_value.__aenter__.return_value.json.return_value = {
-            "status": {"charging_state": 2}  # Raw numeric value
+            "general": {"status": 2}  # Raw numeric value
         }
 
         result = await api.get_values(raw=True)
 
-        assert result == {"status": {"charging_state": 2}}
+        assert result == {"general": {"status": 2}}
         call_args = mock_session.get.call_args
         params = call_args[1]["params"]
         assert params == {QUERY_PARAM_RAW: QUERY_VALUE_TRUE}
@@ -187,13 +227,13 @@ class TestAPIGetMethods:
         """Test get_values with both sections and raw mode."""
         api = NRGkickAPI(host="192.168.1.100", session=mock_session)
 
-        await api.get_values(["status", "powerflow"], raw=True)
+        await api.get_values(["general", "powerflow"], raw=True)
 
         call_args = mock_session.get.call_args
         params = call_args[1]["params"]
         assert params == {
             QUERY_PARAM_RAW: QUERY_VALUE_TRUE,
-            "status": QUERY_VALUE_TRUE,
+            "general": QUERY_VALUE_TRUE,
             "powerflow": QUERY_VALUE_TRUE,
         }
 
@@ -368,10 +408,19 @@ class TestAPIAuthentication:
         await api.get_info()
 
         call_args = mock_session.get.call_args
-        auth = call_args[1]["auth"]
-        assert auth is not None
-        assert auth.login == "test_user"
-        assert auth.password == "test_pass"
+        headers = call_args[1]["headers"]
+        assert headers["Authorization"] == aiohttp.encode_basic_auth(
+            "test_user", "test_pass"
+        )
+
+    async def test_api_without_auth_sends_no_auth_header(self, mock_session):
+        """Test API calls without credentials send no Authorization header."""
+        api = NRGkickAPI(host="192.168.1.100", session=mock_session)
+
+        await api.get_info()
+
+        call_args = mock_session.get.call_args
+        assert "Authorization" not in call_args[1]["headers"]
 
     async def test_api_auth_error_401(self, mock_session):
         """Test API authentication error with 401."""
@@ -497,7 +546,7 @@ class TestAPIHTTPErrors:
         response_mock.json = AsyncMock(side_effect=Exception("Invalid JSON"))
         response_mock.raise_for_status = Mock()  # 200 OK => no exception
 
-        with pytest.raises(NRGkickConnectionError, match="Invalid JSON response"):
+        with pytest.raises(NRGkickInvalidResponseError, match="Invalid JSON response"):
             await api.get_info()
 
     async def test_api_non_dict_json_response_raises(self, mock_session):
@@ -508,8 +557,12 @@ class TestAPIHTTPErrors:
         response_mock.status = 200
         response_mock.json = AsyncMock(return_value=[{"a": 1}])
 
-        with pytest.raises(NRGkickConnectionError, match="Unexpected response type"):
+        with pytest.raises(
+            NRGkickInvalidResponseError, match="Unexpected response type"
+        ) as exc_info:
             await api.get_values()
+
+        assert exc_info.value.raw == [{"a": 1}]
 
     async def test_api_disabled_raises(self, mock_session):
         """Device returns a JSON message when the local JSON API is disabled."""
@@ -656,6 +709,240 @@ class TestAPIRetryLogic:
         assert attempt_count == 3
 
 
+class TestAPIErrorClassification:
+    """Tests for the specific connection error subclasses."""
+
+    async def test_timeout_raises_timeout_error(self, mock_session, no_retry_delay):
+        """Timeouts on every attempt raise NRGkickTimeoutError."""
+        api = NRGkickAPI("192.168.1.100", session=mock_session)
+        mock_session.get.side_effect = TimeoutError
+
+        with pytest.raises(NRGkickTimeoutError, match="timeout"):
+            await api.get_info()
+
+        assert mock_session.get.call_count == 3
+
+    async def test_aiohttp_timeout_raises_timeout_error(
+        self, mock_session, no_retry_delay
+    ):
+        """aiohttp's own connect timeout is classified as a timeout."""
+        api = NRGkickAPI("192.168.1.100", session=mock_session)
+        mock_session.get.side_effect = aiohttp.ConnectionTimeoutError(
+            "Connection timeout to host"
+        )
+
+        with pytest.raises(NRGkickTimeoutError):
+            await api.get_info()
+
+    async def test_timeout_error_caught_as_connection_error(
+        self, mock_session, no_retry_delay
+    ):
+        """Existing `except NRGkickConnectionError` still catches timeouts."""
+        api = NRGkickAPI("192.168.1.100", session=mock_session)
+        mock_session.get.side_effect = TimeoutError
+
+        with pytest.raises(NRGkickConnectionError) as exc_info:
+            await api.get_info()
+
+        assert isinstance(exc_info.value, NRGkickTimeoutError)
+
+    async def test_connection_refused_raises_unreachable_error(
+        self, mock_session, no_retry_delay
+    ):
+        """A refused connection raises NRGkickUnreachableError."""
+        api = NRGkickAPI("192.168.1.100", session=mock_session)
+        mock_session.get.side_effect = aiohttp.ClientConnectorError(
+            connection_key=Mock(), os_error=ConnectionRefusedError("refused")
+        )
+
+        with pytest.raises(NRGkickUnreachableError):
+            await api.get_info()
+
+        assert mock_session.get.call_count == 3
+
+    async def test_dns_failure_raises_unreachable_error(
+        self, mock_session, no_retry_delay
+    ):
+        """A DNS resolution failure raises NRGkickUnreachableError."""
+        api = NRGkickAPI("nrgkick.invalid", session=mock_session)
+        mock_session.get.side_effect = aiohttp.ClientConnectorDNSError(
+            connection_key=Mock(), os_error=OSError("Name or service not known")
+        )
+
+        with pytest.raises(NRGkickUnreachableError):
+            await api.get_info()
+
+    async def test_unreachable_error_caught_as_connection_error(
+        self, mock_session, no_retry_delay
+    ):
+        """Existing `except NRGkickConnectionError` still catches unreachable."""
+        api = NRGkickAPI("192.168.1.100", session=mock_session)
+        mock_session.get.side_effect = aiohttp.ClientConnectorError(
+            connection_key=Mock(), os_error=OSError("Network is unreachable")
+        )
+
+        with pytest.raises(NRGkickConnectionError) as exc_info:
+            await api.get_info()
+
+        assert isinstance(exc_info.value, NRGkickUnreachableError)
+
+    async def test_connection_reset_raises_plain_connection_error(
+        self, mock_session, no_retry_delay
+    ):
+        """An OS error on an established connection is not 'unreachable'."""
+        api = NRGkickAPI("192.168.1.100", session=mock_session)
+        mock_session.get.side_effect = aiohttp.ClientOSError(
+            104, "Connection reset by peer"
+        )
+
+        with pytest.raises(NRGkickConnectionError) as exc_info:
+            await api.get_info()
+
+        assert type(exc_info.value) is NRGkickConnectionError
+
+    async def test_server_disconnected_raises_plain_connection_error(
+        self, mock_session, no_retry_delay
+    ):
+        """Other aiohttp client errors raise the base NRGkickConnectionError."""
+        api = NRGkickAPI("192.168.1.100", session=mock_session)
+        mock_session.get.side_effect = aiohttp.ServerDisconnectedError()
+
+        with pytest.raises(NRGkickConnectionError) as exc_info:
+            await api.get_info()
+
+        assert type(exc_info.value) is NRGkickConnectionError
+        assert mock_session.get.call_count == 3
+
+    async def test_http_error_without_json_raises_http_error(self, mock_session):
+        """An HTTP error status with a non-JSON body raises NRGkickHTTPError."""
+        api = NRGkickAPI("192.168.1.100", session=mock_session)
+        _set_response(mock_session, _http_error_response(404, ValueError("no json")))
+
+        with pytest.raises(NRGkickHTTPError) as exc_info:
+            await api.get_info()
+
+        assert exc_info.value.status == 404
+        assert mock_session.get.call_count == 1  # 4xx is not retried
+
+    async def test_http_error_with_json_without_response_raises_http_error(
+        self, mock_session
+    ):
+        """An HTTP error status with a JSON object lacking 'Response' raises."""
+        api = NRGkickAPI("192.168.1.100", session=mock_session)
+        _set_response(mock_session, _http_error_response(400, {"error": "bad"}))
+
+        with pytest.raises(NRGkickHTTPError) as exc_info:
+            await api.get_info()
+
+        assert exc_info.value.status == 400
+
+    async def test_http_error_with_empty_json_raises_http_error(self, mock_session):
+        """An HTTP error status wins over an empty/non-object JSON body."""
+        api = NRGkickAPI("192.168.1.100", session=mock_session)
+
+        for body in (None, [], "error"):
+            _set_response(mock_session, _http_error_response(400, body))
+
+            with pytest.raises(NRGkickHTTPError) as exc_info:
+                await api.get_info()
+
+            assert exc_info.value.status == 400
+
+    @pytest.mark.parametrize("method", ["get_info", "get_control", "get_values"])
+    async def test_read_http_error_with_device_message_raises_http_error(
+        self, mock_session, method
+    ):
+        """Read calls raise NRGkickHTTPError even if the device sends a message."""
+        api = NRGkickAPI("192.168.1.100", session=mock_session)
+        _set_response(
+            mock_session,
+            _http_error_response(
+                404,
+                {
+                    JSON_KEY_RESPONSE: "Error 404 - The requested resource could not be found"
+                },
+            ),
+        )
+
+        with pytest.raises(NRGkickHTTPError) as exc_info:
+            await getattr(api, method)()
+
+        assert exc_info.value.status == 404
+
+    async def test_command_http_error_with_device_message_raises_rejected(
+        self, mock_session
+    ):
+        """Commands still report an HTTP error with a device message as rejection."""
+        api = NRGkickAPI("192.168.1.100", session=mock_session)
+        _set_response(
+            mock_session,
+            _http_error_response(
+                406,
+                {JSON_KEY_RESPONSE: "Invalid current entered, allowed 6.0A - 32.0A"},
+            ),
+        )
+
+        with pytest.raises(NRGkickCommandRejectedError) as exc_info:
+            await api.set_current(0.0)
+
+        assert exc_info.value.reason == "Invalid current entered, allowed 6.0A - 32.0A"
+
+    async def test_transient_http_error_exhausted_raises_http_error(
+        self, mock_session, no_retry_delay
+    ):
+        """A 5xx status that persists after retries raises NRGkickHTTPError."""
+        api = NRGkickAPI("192.168.1.100", session=mock_session)
+        _set_response(mock_session, _http_error_response(503, ValueError("no json")))
+
+        with pytest.raises(NRGkickHTTPError) as exc_info:
+            await api.get_values()
+
+        assert exc_info.value.status == 503
+        assert mock_session.get.call_count == 3
+
+    async def test_http_error_caught_as_connection_error(self, mock_session):
+        """Existing `except NRGkickConnectionError` still catches HTTP errors."""
+        api = NRGkickAPI("192.168.1.100", session=mock_session)
+        _set_response(mock_session, _http_error_response(500, ValueError("no json")))
+
+        with pytest.raises(NRGkickConnectionError) as exc_info:
+            await api.set_current(16.0)
+
+        assert isinstance(exc_info.value, NRGkickHTTPError)
+        assert exc_info.value.status == 500
+
+
+class TestAPIInvalidResponses:
+    """Tests for malformed payloads with a successful HTTP status."""
+
+    @pytest.mark.parametrize(
+        ("json_result", "match"),
+        [
+            (ValueError("Invalid JSON"), "Invalid JSON response"),
+            (None, "No data returned"),
+            ([1, 2], "Unexpected response type list"),
+            ("text", "Unexpected response type str"),
+        ],
+    )
+    async def test_bad_response_raises_invalid_response_error(
+        self, mock_session, json_result, match
+    ):
+        """Bad payloads raise NRGkickInvalidResponseError, not a connection error."""
+        api = NRGkickAPI("192.168.1.100", session=mock_session)
+        response_mock = mock_session.get.return_value.__aenter__.return_value
+        response_mock.status = 200
+        if isinstance(json_result, Exception):
+            response_mock.json = AsyncMock(side_effect=json_result)
+        else:
+            response_mock.json = AsyncMock(return_value=json_result)
+
+        with pytest.raises(NRGkickInvalidResponseError, match=match) as exc_info:
+            await api.get_info()
+
+        assert not isinstance(exc_info.value, NRGkickConnectionError)
+        assert mock_session.get.call_count == 1  # Not retried
+
+
 class TestExceptions:
     """Tests for exception hierarchy."""
 
@@ -666,6 +953,35 @@ class TestExceptions:
         assert issubclass(NRGkickConnectionError, NRGkickError)
         assert issubclass(NRGkickAuthenticationError, NRGkickError)
         assert issubclass(NRGkickAPIDisabledError, NRGkickError)
+        assert issubclass(NRGkickInvalidResponseError, NRGkickError)
+        assert not issubclass(NRGkickInvalidResponseError, NRGkickConnectionError)
+
+    @pytest.mark.parametrize(
+        "exc_class",
+        [NRGkickTimeoutError, NRGkickUnreachableError, NRGkickHTTPError],
+    )
+    def test_connection_error_subclasses(self, exc_class):
+        """New connection error types are subclasses of NRGkickConnectionError."""
+        assert issubclass(exc_class, NRGkickConnectionError)
+
+    def test_http_error_status(self):
+        """NRGkickHTTPError carries the HTTP status code."""
+        err = NRGkickHTTPError("HTTP error 503", status=503)
+
+        assert err.status == 503
+        assert str(err) == "HTTP error 503"
+
+    def test_new_exceptions_exported(self):
+        """New exception types are part of the public API."""
+        import nrgkick_api
+
+        for name in (
+            "NRGkickTimeoutError",
+            "NRGkickUnreachableError",
+            "NRGkickHTTPError",
+        ):
+            assert name in nrgkick_api.__all__
+            assert hasattr(nrgkick_api, name)
 
     def test_catch_base_exception(self):
         """Test catching all NRGkick exceptions with base class."""

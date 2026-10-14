@@ -2,7 +2,7 @@
 # create_release.sh - Create a release package for nrgkick-api
 #
 # This script:
-# 1. Updates the version in pyproject.toml (if specified)
+# 1. Updates the version in pyproject.toml and uv.lock (if specified)
 # 2. Runs full validation (pre-commit + tests)
 # 3. Builds the distribution package
 # 4. Runs twine check on the package
@@ -36,27 +36,15 @@ echo ""
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# Check/activate virtual environment
-echo -e "${YELLOW}Checking virtual environment...${NC}"
-
-if [[ -z "$VIRTUAL_ENV" ]]; then
-    if [[ -f "venv/bin/activate" ]]; then
-        source venv/bin/activate
-        echo -e "${GREEN}✓ Virtual environment activated${NC}"
-    elif [[ -f "venv/Scripts/activate" ]]; then
-        source venv/Scripts/activate
-        echo -e "${GREEN}✓ Virtual environment activated${NC}"
-    else
-        echo -e "${RED}✗ No virtual environment found!${NC}"
-        echo "Please create one first: python -m venv venv && pip install -e '.[dev]'"
-        exit 1
-    fi
-else
-    echo -e "${GREEN}✓ Virtual environment already active${NC}"
+# Check uv
+if ! command -v uv &> /dev/null; then
+    echo -e "${RED}✗ uv is not installed!${NC}"
+    echo "Install it from https://docs.astral.sh/uv/getting-started/installation/"
+    exit 1
 fi
 
 # Get current version from pyproject.toml
-CURRENT_VERSION=$(grep -E '^version\s*=' pyproject.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+CURRENT_VERSION=$(uv version --short)
 echo -e "Current version: ${CYAN}${CURRENT_VERSION}${NC}"
 
 # Step 1: Update version if specified
@@ -73,8 +61,8 @@ if [[ "$NEW_VERSION" != "$CURRENT_VERSION" ]]; then
         exit 1
     fi
 
-    # Update version in pyproject.toml
-    sed -i "s/^version = \".*\"/version = \"$NEW_VERSION\"/" pyproject.toml
+    # Update version in pyproject.toml and uv.lock
+    uv version "$NEW_VERSION" > /dev/null
 
     echo -e "${GREEN}✓ Version updated to ${NEW_VERSION}${NC}"
     VERSION_CHANGED=true
@@ -103,7 +91,7 @@ echo -e "${GREEN}✓ Build directories cleaned${NC}"
 echo ""
 echo -e "${YELLOW}Step 4: Building distribution package...${NC}"
 
-python -m build
+uv build
 
 echo -e "${GREEN}✓ Package built successfully${NC}"
 
@@ -111,7 +99,7 @@ echo -e "${GREEN}✓ Package built successfully${NC}"
 echo ""
 echo -e "${YELLOW}Step 5: Validating package with twine...${NC}"
 
-twine check dist/*
+uv run twine check dist/*
 
 echo -e "${GREEN}✓ Package validation passed${NC}"
 
@@ -146,7 +134,7 @@ if [[ "$VERSION_CHANGED" == true ]]; then
     echo -e "${YELLOW}Files were modified. Complete these steps to publish:${NC}"
     echo ""
     echo "1. Review and commit the version change:"
-    echo -e "   ${CYAN}git add pyproject.toml${NC}"
+    echo -e "   ${CYAN}git add pyproject.toml uv.lock${NC}"
     echo -e "   ${CYAN}git commit -m \"Bump version to ${NEW_VERSION}\"${NC}"
     echo ""
 else
@@ -169,15 +157,13 @@ echo "   - Title: v${NEW_VERSION}"
 echo "   - This will trigger automatic PyPI publishing via GitHub Actions"
 echo ""
 echo "4. (Alternative) Manual upload to PyPI:"
-echo -e "   ${CYAN}twine upload dist/*${NC}"
-echo "   Username: __token__"
-echo "   Password: <your PyPI API token>"
+echo -e "   ${CYAN}uv publish --token <your PyPI API token>${NC}"
 echo ""
 echo "5. Verify on PyPI:"
 echo -e "   ${CYAN}https://pypi.org/project/nrgkick-api/${NEW_VERSION}/${NC}"
 echo ""
 echo "6. Test installation:"
-echo -e "   ${CYAN}pip install nrgkick-api==${NEW_VERSION}${NC}"
+echo -e "   ${CYAN}uv pip install nrgkick-api==${NEW_VERSION}${NC}"
 echo ""
 
 # Remind about CHANGELOG

@@ -15,12 +15,46 @@ class NRGkickError(Exception):
 class NRGkickConnectionError(NRGkickError):
     """Exception for connection and communication errors.
 
-    Raised when:
-    - Connection to the device times out
-    - Network errors occur (device unreachable)
-    - HTTP 5xx server errors persist after retries
-    - Other aiohttp client errors occur
+    Base class for all transport-level errors. The subclasses below identify
+    the specific cause, so consumers can map them to their own (translated)
+    messages without parsing the English exception text.
+
+    Raised directly (not as a subclass) when the exchange with the device
+    broke off for another reason, e.g. the connection was reset or the
+    server disconnected mid-response.
     """
+
+
+class NRGkickTimeoutError(NRGkickConnectionError):
+    """Exception raised when the device did not respond in time.
+
+    Covers both connect and read timeouts, after all retries are exhausted.
+    """
+
+
+class NRGkickUnreachableError(NRGkickConnectionError):
+    """Exception raised when no connection to the device could be established.
+
+    Raised when, after all retries are exhausted:
+    - The connection is refused
+    - The hostname cannot be resolved (DNS failure)
+    - The network or host is unreachable
+    """
+
+
+class NRGkickHTTPError(NRGkickConnectionError):
+    """Exception raised when the device answers with an HTTP error status.
+
+    Authentication failures (HTTP 401/403) raise NRGkickAuthenticationError
+    instead.
+
+    Attributes:
+        status: HTTP status code returned by the device.
+    """
+
+    def __init__(self, message: str, *, status: int) -> None:
+        super().__init__(message)
+        self.status = status
 
 
 class NRGkickAuthenticationError(NRGkickError):
@@ -61,8 +95,9 @@ class NRGkickCommandRejectedError(NRGkickError):
 class NRGkickInvalidResponseError(NRGkickError):
     """Exception raised when a response payload does not match expectations.
 
-    This indicates a protocol mismatch, unexpected payload type, missing keys,
-    or values that cannot be coerced to the expected type.
+    This indicates a protocol mismatch: a body that is not valid JSON, an
+    empty or non-object payload, missing keys, or values that cannot be
+    coerced to the expected type.
 
     Attributes:
         message: Human-readable explanation of what was invalid.
