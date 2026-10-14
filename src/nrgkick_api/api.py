@@ -90,7 +90,7 @@ class NRGkickAPI:
         self._base_url = f"http://{host}"
 
     def _handle_auth_error(self, response_status: int, url: str) -> None:
-        """Handle authentication errors with detailed logging.
+        """Handle authentication errors with debug logging.
 
         Args:
             response_status: HTTP status code (401 or 403).
@@ -99,7 +99,7 @@ class NRGkickAPI:
         Raises:
             NRGkickAuthenticationError: Always raised with details.
         """
-        _LOGGER.warning(
+        _LOGGER.debug(
             "Authentication failed (HTTP %d). Verify BasicAuth settings. Target: %s",
             response_status,
             url,
@@ -119,7 +119,7 @@ class NRGkickAPI:
         Raises:
             NRGkickTimeoutError: Always raised with details.
         """
-        _LOGGER.error(
+        _LOGGER.debug(
             "Connection timeout after %d attempts. Target: %s", MAX_RETRIES, url
         )
         raise NRGkickTimeoutError(
@@ -137,7 +137,7 @@ class NRGkickAPI:
         Raises:
             NRGkickHTTPError: Always raised with details and the status code.
         """
-        _LOGGER.error(
+        _LOGGER.debug(
             "Device returned HTTP error %d (%s). URL: %s",
             exc.status,
             exc.message,
@@ -166,7 +166,7 @@ class NRGkickAPI:
             NRGkickConnectionError: If an OS-level error interrupted an
                 established connection (e.g. connection reset).
         """
-        _LOGGER.error(
+        _LOGGER.debug(
             "Network connection failed after %d attempts: %s. Target: %s",
             MAX_RETRIES,
             exc,
@@ -192,7 +192,7 @@ class NRGkickAPI:
         Raises:
             NRGkickConnectionError: Always raised with details.
         """
-        _LOGGER.error(
+        _LOGGER.debug(
             "Connection failed after %d attempts: %s. Target: %s",
             MAX_RETRIES,
             exc,
@@ -440,7 +440,7 @@ class NRGkickAPI:
 
                 # Success - log if this was a retry
                 if attempt > 0:
-                    _LOGGER.info(
+                    _LOGGER.debug(
                         "Successfully connected to NRGkick after %d retry attempt(s)",
                         attempt,
                     )

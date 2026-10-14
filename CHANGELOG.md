@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.8.1
+
+### Changed
+
+- The library no longer logs errors before raising them. Timeouts, connection, HTTP and authentication errors were logged at ERROR/WARNING right before the exception was raised, which duplicated the consumer's own error reporting (e.g. one ERROR per poll in Home Assistant while the charger is offline). These messages, and the "Successfully connected after retry" message (previously INFO), are now logged at DEBUG. The exceptions carry the same details as before.
+
 ## 1.8.0
 
 ### ⚠️ Behaviour change
